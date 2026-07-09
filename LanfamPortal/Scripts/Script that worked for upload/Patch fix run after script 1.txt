@@ -1,0 +1,78 @@
+/* ============================================================
+   PATCH: fix Msg 1776 (FKs cannot reference filtered indexes)
+   Run this in SSMS against LanfamArchive after the main script.
+   Safe to run repeatedly. Data is untouched.
+   ============================================================ */
+USE [LanfamArchive];
+GO
+
+/* 1. Drop any FKs that may have partially created */
+IF OBJECT_ID('lanfam.FK_ChildHistory_Child','F') IS NOT NULL
+    ALTER TABLE lanfam.ChildHistory DROP CONSTRAINT FK_ChildHistory_Child;
+IF OBJECT_ID('lanfam.FK_CostPurchase_Child','F') IS NOT NULL
+    ALTER TABLE lanfam.CostPurchase DROP CONSTRAINT FK_CostPurchase_Child;
+IF OBJECT_ID('lanfam.FK_CostEdit_Child','F') IS NOT NULL
+    ALTER TABLE lanfam.CostEdit DROP CONSTRAINT FK_CostEdit_Child;
+IF OBJECT_ID('lanfam.FK_Child_AdmitWorker','F') IS NOT NULL
+    ALTER TABLE lanfam.Child DROP CONSTRAINT FK_Child_AdmitWorker;
+IF OBJECT_ID('lanfam.FK_Child_CurWorker','F') IS NOT NULL
+    ALTER TABLE lanfam.Child DROP CONSTRAINT FK_Child_CurWorker;
+IF OBJECT_ID('lanfam.FK_CostPurchase_Worker','F') IS NOT NULL
+    ALTER TABLE lanfam.CostPurchase DROP CONSTRAINT FK_CostPurchase_Worker;
+IF OBJECT_ID('lanfam.FK_Referral_Family','F') IS NOT NULL
+    ALTER TABLE lanfam.Referral DROP CONSTRAINT FK_Referral_Family;
+IF OBJECT_ID('lanfam.FK_FamilyHistory_Family','F') IS NOT NULL
+    ALTER TABLE lanfam.FamilyHistory DROP CONSTRAINT FK_FamilyHistory_Family;
+GO
+
+/* 2. Replace filtered unique indexes with real UNIQUE constraints
+      (both columns verified fully populated in the source data)  */
+IF EXISTS (SELECT 1 FROM sys.indexes
+           WHERE name='UX_Child_caseno'
+             AND object_id=OBJECT_ID('lanfam.Child'))
+    DROP INDEX UX_Child_caseno ON lanfam.Child;
+IF EXISTS (SELECT 1 FROM sys.indexes
+           WHERE name='UX_Worker_cd'
+             AND object_id=OBJECT_ID('lanfam.Worker'))
+    DROP INDEX UX_Worker_cd ON lanfam.Worker;
+GO
+
+ALTER TABLE lanfam.Child  ALTER COLUMN caseno    NVARCHAR(10) NOT NULL;
+ALTER TABLE lanfam.Worker ALTER COLUMN worker_cd NVARCHAR(5)  NOT NULL;
+GO
+
+IF OBJECT_ID('lanfam.UQ_Child_caseno','UQ') IS NULL
+    ALTER TABLE lanfam.Child
+        ADD CONSTRAINT UQ_Child_caseno UNIQUE (caseno);
+IF OBJECT_ID('lanfam.UQ_Worker_cd','UQ') IS NULL
+    ALTER TABLE lanfam.Worker
+        ADD CONSTRAINT UQ_Worker_cd UNIQUE (worker_cd);
+GO
+
+/* 3. Re-create all relationships (NOCHECK: legacy orphans tolerated) */
+ALTER TABLE lanfam.ChildHistory WITH NOCHECK ADD CONSTRAINT
+    FK_ChildHistory_Child FOREIGN KEY (caseno) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.CostPurchase WITH NOCHECK ADD CONSTRAINT
+    FK_CostPurchase_Child FOREIGN KEY (caseno) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.CostEdit WITH NOCHECK ADD CONSTRAINT
+    FK_CostEdit_Child FOREIGN KEY (caseno2) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.Child WITH NOCHECK ADD CONSTRAINT
+    FK_Child_AdmitWorker FOREIGN KEY (admit_wrk_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.Child WITH NOCHECK ADD CONSTRAINT
+    FK_Child_CurWorker FOREIGN KEY (cur_wrk_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.CostPurchase WITH NOCHECK ADD CONSTRAINT
+    FK_CostPurchase_Worker FOREIGN KEY (worker_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.Referral WITH NOCHECK ADD CONSTRAINT
+    FK_Referral_Family FOREIGN KEY (famno) REFERENCES lanfam.FamilyIndex (famno);
+ALTER TABLE lanfam.FamilyHistory WITH NOCHECK ADD CONSTRAINT
+    FK_FamilyHistory_Family FOREIGN KEY (famno) REFERENCES lanfam.FamilyIndex (famno);
+GO
+
+/* 4. Verify: should list 8 foreign keys */
+SELECT fk.name AS ForeignKey,
+       OBJECT_NAME(fk.parent_object_id) AS ChildTable,
+       OBJECT_NAME(fk.referenced_object_id) AS ParentTable
+FROM sys.foreign_keys fk
+WHERE SCHEMA_NAME(fk.schema_id) = 'lanfam'
+ORDER BY fk.name;
+GO

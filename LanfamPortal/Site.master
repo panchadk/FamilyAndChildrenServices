@@ -1,0 +1,50 @@
+<%@ Master Language="C#" %>
+<!DOCTYPE html>
+<html lang="en">
+<head runat="server">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><asp:ContentPlaceHolder ID="TitleContent" runat="server">LANFAM Archive</asp:ContentPlaceHolder></title>
+  <link rel="stylesheet" href="Styles.css" />
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap mast-top">
+      <a class="brand" href="Default.aspx">
+        <span class="brand-mark">LF</span>
+        <span class="brand-text">LANFAM Archive
+          <small>Family &amp; Children&#8217;s Services &#183; historical records 1970&#8211;2023</small>
+        </span>
+      </a>
+      <form class="quicksearch" method="get" action="Default.aspx">
+        <input type="text" name="q" placeholder="Quick search: name or case/family no&#8230;"
+               value="<%= Db.H(Request["q"]) %>" />
+        <input type="submit" value="GO" />
+      </form>
+      <div class="whoami">
+        <span class="readonly-chip">READ-ONLY</span>
+        <%= Db.H(Context.User.Identity.Name) %>
+      </div>
+    </div>
+    <nav class="wrap mainnav">
+      <a href="Default.aspx">Search</a>
+      <a href="Browse.aspx">Browse children</a>
+      <a href="Families.aspx">Families</a>
+      <a href="Referrals.aspx">Referrals</a>
+      <a href="Placements.aspx">Placements</a>
+      <a href="CrossReference.aspx">Cross references</a>
+      <a href="Resource.aspx">Resources</a>
+      <a href="Worker.aspx">Workers</a>
+      <a href="Codes.aspx">Code book</a>
+    </nav>
+  </header>
+  <main class="wrap">
+    <asp:ContentPlaceHolder ID="MainContent" runat="server" />
+  </main>
+  <footer class="wrap foot">
+    Access to this archive is logged. Records are confidential under CYFSA &#8212;
+    do not disclose without authorization.
+  </footer>
+  <script src="tables.js"></script>
+</body>
+</html>

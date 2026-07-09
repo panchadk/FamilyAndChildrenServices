@@ -1,0 +1,1582 @@
+/* ============================================================
+   LANFAM legacy system -> SQL Server import  (plain SSMS version)
+   Creates all tables and imports the 19 extracted CSV files,
+   with relationships (FKs), indexes, and integrity reporting.
+
+   BEFORE RUNNING (2 steps):
+   1. Unzip all 19 CSV files to  C:\LANFAM\csv  on the SQL Server
+      machine (the path is read by the SQL Server service, not by
+      SSMS - if SSMS runs on your PC but SQL Server is remote, the
+      files must be on the server or a UNC path its service
+      account can read).
+   2. If you use a different folder, Ctrl+H replace
+      C:\LANFAM\csv  with your path before executing.
+
+   Then just press F5. No SQLCMD mode needed.
+   Creates database [LanfamArchive] if absent (Ctrl+H to rename).
+   Requires SQL Server 2017 or later (BULK INSERT FORMAT='CSV').
+
+   DESIGN NOTES
+   - Each CSV loads into a staging table (all NVARCHAR), then into
+     a typed table via TRY_CONVERT, so a bad value can never abort
+     the load; conversion failures land as NULL.
+   - Foreign keys are created WITH NOCHECK: they document and
+     enforce relationships for NEW rows without rejecting legacy
+     orphans (e.g. history rows for children absent from the 2008
+     CHILD snapshot). The orphan report at the end quantifies them.
+   - FamilyIndex consolidates the two family masters (numeric and
+     S/J-prefixed keys) into one referenceable parent.
+   - ChildHistory gets a persisted computed column ResnoFull
+     (res_type + resno) to join Resource.
+   ============================================================ */
+
+IF DB_ID('LanfamArchive') IS NULL
+    CREATE DATABASE [LanfamArchive];
+GO
+USE [LanfamArchive];
+GO
+IF SCHEMA_ID('lanfam') IS NULL
+    EXEC('CREATE SCHEMA lanfam');
+GO
+
+/* ---------- Child: Children in care master (CHILD.DAT) (1,061 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Child') IS NOT NULL DROP TABLE lanfam.stg_Child;
+CREATE TABLE lanfam.stg_Child (
+    [caseno] NVARCHAR(MAX) NULL,
+    [upd_date] NVARCHAR(MAX) NULL,
+    [closed_flag] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [givename] NVARCHAR(MAX) NULL,
+    [alias] NVARCHAR(MAX) NULL,
+    [trkname] NVARCHAR(MAX) NULL,
+    [birthdate] NVARCHAR(MAX) NULL,
+    [birth_verified] NVARCHAR(MAX) NULL,
+    [sex] NVARCHAR(MAX) NULL,
+    [famres] NVARCHAR(MAX) NULL,
+    [new_readmit] NVARCHAR(MAX) NULL,
+    [school] NVARCHAR(MAX) NULL,
+    [health_card] NVARCHAR(MAX) NULL,
+    [x_108_114] NVARCHAR(MAX) NULL,
+    [admit_date] NVARCHAR(MAX) NULL,
+    [adm_reason1] NVARCHAR(MAX) NULL,
+    [adm_reason2] NVARCHAR(MAX) NULL,
+    [admit_type] NVARCHAR(MAX) NULL,
+    [ward_status] NVARCHAR(MAX) NULL,
+    [admit_wrk_cd] NVARCHAR(MAX) NULL,
+    [admit_worker] NVARCHAR(MAX) NULL,
+    [admit_super] NVARCHAR(MAX) NULL,
+    [cur_wrk_cd] NVARCHAR(MAX) NULL,
+    [cur_worker] NVARCHAR(MAX) NULL,
+    [cur_super] NVARCHAR(MAX) NULL,
+    [fam_wrk_cd] NVARCHAR(MAX) NULL,
+    [fam_worker] NVARCHAR(MAX) NULL,
+    [fam_super] NVARCHAR(MAX) NULL,
+    [res_no] NVARCHAR(MAX) NULL,
+    [place_date] NVARCHAR(MAX) NULL,
+    [board_rate] NVARCHAR(MAX) NULL,
+    [place_code] NVARCHAR(MAX) NULL,
+    [x_256_262] NVARCHAR(MAX) NULL,
+    [x_262_268] NVARCHAR(MAX) NULL,
+    [x_268_278] NVARCHAR(MAX) NULL,
+    [x_278_280] NVARCHAR(MAX) NULL,
+    [x_280_296] NVARCHAR(MAX) NULL,
+    [x_296_300] NVARCHAR(MAX) NULL,
+    [x_300_316] NVARCHAR(MAX) NULL,
+    [x_316_320] NVARCHAR(MAX) NULL,
+    [x_320_336] NVARCHAR(MAX) NULL,
+    [x_336_340] NVARCHAR(MAX) NULL,
+    [x_340_370] NVARCHAR(MAX) NULL,
+    [hist_date1] NVARCHAR(MAX) NULL,
+    [hist_date2] NVARCHAR(MAX) NULL,
+    [hist_date3] NVARCHAR(MAX) NULL,
+    [hist_date4] NVARCHAR(MAX) NULL,
+    [hist_date5] NVARCHAR(MAX) NULL,
+    [hist_date6] NVARCHAR(MAX) NULL,
+    [hist_date7] NVARCHAR(MAX) NULL,
+    [hist_date8] NVARCHAR(MAX) NULL,
+    [x_448_468] NVARCHAR(MAX) NULL,
+    [hist_date9] NVARCHAR(MAX) NULL,
+    [hist_date10] NVARCHAR(MAX) NULL,
+    [x_488_490] NVARCHAR(MAX) NULL,
+    [disch_code] NVARCHAR(MAX) NULL,
+    [x_492_520] NVARCHAR(MAX) NULL,
+    [hist_date11] NVARCHAR(MAX) NULL,
+    [hist_date12] NVARCHAR(MAX) NULL,
+    [hist_date13] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Child
+FROM 'C:\LANFAM\csv\child_extract.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Child') IS NOT NULL DROP TABLE lanfam.Child;
+CREATE TABLE lanfam.Child (
+    ChildID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Child PRIMARY KEY,
+    [caseno] NVARCHAR(10) NULL,
+    [upd_date] DATE NULL,
+    [closed_flag] NVARCHAR(11) NULL,
+    [surname] NVARCHAR(31) NULL,
+    [givename] NVARCHAR(32) NULL,
+    [alias] NVARCHAR(26) NULL,
+    [trkname] NVARCHAR(14) NULL,
+    [birthdate] DATE NULL,
+    [birth_verified] NVARCHAR(11) NULL,
+    [sex] NVARCHAR(11) NULL,
+    [famres] NVARCHAR(12) NULL,
+    [new_readmit] NVARCHAR(11) NULL,
+    [school] NVARCHAR(12) NULL,
+    [health_card] NVARCHAR(20) NULL,
+    [x_108_114] NVARCHAR(16) NULL,
+    [admit_date] DATE NULL,
+    [adm_reason1] NVARCHAR(12) NULL,
+    [adm_reason2] NVARCHAR(12) NULL,
+    [admit_type] NVARCHAR(12) NULL,
+    [ward_status] NVARCHAR(12) NULL,
+    [admit_wrk_cd] NVARCHAR(5) NULL,
+    [admit_worker] NVARCHAR(25) NULL,
+    [admit_super] NVARCHAR(25) NULL,
+    [cur_wrk_cd] NVARCHAR(5) NULL,
+    [cur_worker] NVARCHAR(25) NULL,
+    [cur_super] NVARCHAR(25) NULL,
+    [fam_wrk_cd] NVARCHAR(5) NULL,
+    [fam_worker] NVARCHAR(25) NULL,
+    [fam_super] NVARCHAR(25) NULL,
+    [res_no] NVARCHAR(16) NULL,
+    [place_date] DATE NULL,
+    [board_rate] NVARCHAR(14) NULL,
+    [place_code] NVARCHAR(15) NULL,
+    [x_256_262] NVARCHAR(15) NULL,
+    [x_262_268] NVARCHAR(15) NULL,
+    [x_268_278] NVARCHAR(20) NULL,
+    [x_278_280] NVARCHAR(12) NULL,
+    [x_280_296] NVARCHAR(11) NULL,
+    [x_296_300] NVARCHAR(14) NULL,
+    [x_300_316] NVARCHAR(11) NULL,
+    [x_316_320] NVARCHAR(14) NULL,
+    [x_320_336] NVARCHAR(11) NULL,
+    [x_336_340] NVARCHAR(14) NULL,
+    [x_340_370] NVARCHAR(12) NULL,
+    [hist_date1] DATE NULL,
+    [hist_date2] NVARCHAR(20) NULL,
+    [hist_date3] NVARCHAR(20) NULL,
+    [hist_date4] NVARCHAR(20) NULL,
+    [hist_date5] NVARCHAR(20) NULL,
+    [hist_date6] NVARCHAR(20) NULL,
+    [hist_date7] NVARCHAR(20) NULL,
+    [hist_date8] DATE NULL,
+    [x_448_468] NVARCHAR(20) NULL,
+    [hist_date9] DATE NULL,
+    [hist_date10] NVARCHAR(20) NULL,
+    [x_488_490] NVARCHAR(12) NULL,
+    [disch_code] NVARCHAR(12) NULL,
+    [x_492_520] NVARCHAR(28) NULL,
+    [hist_date11] DATE NULL,
+    [hist_date12] DATE NULL,
+    [hist_date13] DATE NULL
+);
+INSERT INTO lanfam.Child ([caseno], [upd_date], [closed_flag], [surname], [givename], [alias], [trkname], [birthdate], [birth_verified], [sex], [famres], [new_readmit], [school], [health_card], [x_108_114], [admit_date], [adm_reason1], [adm_reason2], [admit_type], [ward_status], [admit_wrk_cd], [admit_worker], [admit_super], [cur_wrk_cd], [cur_worker], [cur_super], [fam_wrk_cd], [fam_worker], [fam_super], [res_no], [place_date], [board_rate], [place_code], [x_256_262], [x_262_268], [x_268_278], [x_278_280], [x_280_296], [x_296_300], [x_300_316], [x_316_320], [x_320_336], [x_336_340], [x_340_370], [hist_date1], [hist_date2], [hist_date3], [hist_date4], [hist_date5], [hist_date6], [hist_date7], [hist_date8], [x_448_468], [hist_date9], [hist_date10], [x_488_490], [disch_code], [x_492_520], [hist_date11], [hist_date12], [hist_date13])
+SELECT
+    NULLIF(LTRIM(RTRIM([caseno])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([upd_date])), '')),
+    NULLIF(LTRIM(RTRIM([closed_flag])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([givename])), ''),
+    NULLIF(LTRIM(RTRIM([alias])), ''),
+    NULLIF(LTRIM(RTRIM([trkname])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([birthdate])), '')),
+    NULLIF(LTRIM(RTRIM([birth_verified])), ''),
+    NULLIF(LTRIM(RTRIM([sex])), ''),
+    NULLIF(LTRIM(RTRIM([famres])), ''),
+    NULLIF(LTRIM(RTRIM([new_readmit])), ''),
+    NULLIF(LTRIM(RTRIM([school])), ''),
+    NULLIF(LTRIM(RTRIM([health_card])), ''),
+    NULLIF(LTRIM(RTRIM([x_108_114])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([admit_date])), '')),
+    NULLIF(LTRIM(RTRIM([adm_reason1])), ''),
+    NULLIF(LTRIM(RTRIM([adm_reason2])), ''),
+    NULLIF(LTRIM(RTRIM([admit_type])), ''),
+    NULLIF(LTRIM(RTRIM([ward_status])), ''),
+    NULLIF(LTRIM(RTRIM([admit_wrk_cd])), ''),
+    NULLIF(LTRIM(RTRIM([admit_worker])), ''),
+    NULLIF(LTRIM(RTRIM([admit_super])), ''),
+    NULLIF(LTRIM(RTRIM([cur_wrk_cd])), ''),
+    NULLIF(LTRIM(RTRIM([cur_worker])), ''),
+    NULLIF(LTRIM(RTRIM([cur_super])), ''),
+    NULLIF(LTRIM(RTRIM([fam_wrk_cd])), ''),
+    NULLIF(LTRIM(RTRIM([fam_worker])), ''),
+    NULLIF(LTRIM(RTRIM([fam_super])), ''),
+    NULLIF(LTRIM(RTRIM([res_no])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([place_date])), '')),
+    NULLIF(LTRIM(RTRIM([board_rate])), ''),
+    NULLIF(LTRIM(RTRIM([place_code])), ''),
+    NULLIF(LTRIM(RTRIM([x_256_262])), ''),
+    NULLIF(LTRIM(RTRIM([x_262_268])), ''),
+    NULLIF(LTRIM(RTRIM([x_268_278])), ''),
+    NULLIF(LTRIM(RTRIM([x_278_280])), ''),
+    NULLIF(LTRIM(RTRIM([x_280_296])), ''),
+    NULLIF(LTRIM(RTRIM([x_296_300])), ''),
+    NULLIF(LTRIM(RTRIM([x_300_316])), ''),
+    NULLIF(LTRIM(RTRIM([x_316_320])), ''),
+    NULLIF(LTRIM(RTRIM([x_320_336])), ''),
+    NULLIF(LTRIM(RTRIM([x_336_340])), ''),
+    NULLIF(LTRIM(RTRIM([x_340_370])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date1])), '')),
+    NULLIF(LTRIM(RTRIM([hist_date2])), ''),
+    NULLIF(LTRIM(RTRIM([hist_date3])), ''),
+    NULLIF(LTRIM(RTRIM([hist_date4])), ''),
+    NULLIF(LTRIM(RTRIM([hist_date5])), ''),
+    NULLIF(LTRIM(RTRIM([hist_date6])), ''),
+    NULLIF(LTRIM(RTRIM([hist_date7])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date8])), '')),
+    NULLIF(LTRIM(RTRIM([x_448_468])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date9])), '')),
+    NULLIF(LTRIM(RTRIM([hist_date10])), ''),
+    NULLIF(LTRIM(RTRIM([x_488_490])), ''),
+    NULLIF(LTRIM(RTRIM([disch_code])), ''),
+    NULLIF(LTRIM(RTRIM([x_492_520])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date11])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date12])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([hist_date13])), ''))
+FROM lanfam.stg_Child;
+DROP TABLE lanfam.stg_Child;
+GO
+
+/* ---------- ChildHistory: Placement/status history (CHILDHIS.DAT) (23,432 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_ChildHistory') IS NOT NULL DROP TABLE lanfam.stg_ChildHistory;
+CREATE TABLE lanfam.stg_ChildHistory (
+    [caseno] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [given] NVARCHAR(MAX) NULL,
+    [x_052_137] NVARCHAR(MAX) NULL,
+    [x_137_147] NVARCHAR(MAX) NULL,
+    [x_147_157] NVARCHAR(MAX) NULL,
+    [x_157_158] NVARCHAR(MAX) NULL,
+    [event_date] NVARCHAR(MAX) NULL,
+    [event_code] NVARCHAR(MAX) NULL,
+    [event_desc] NVARCHAR(MAX) NULL,
+    [x_191_193] NVARCHAR(MAX) NULL,
+    [x_193_220] NVARCHAR(MAX) NULL,
+    [res_type] NVARCHAR(MAX) NULL,
+    [resno] NVARCHAR(MAX) NULL,
+    [res_surname] NVARCHAR(MAX) NULL,
+    [res_given] NVARCHAR(MAX) NULL,
+    [res_addr1] NVARCHAR(MAX) NULL,
+    [res_addr2] NVARCHAR(MAX) NULL,
+    [res_postal] NVARCHAR(MAX) NULL,
+    [res_phone] NVARCHAR(MAX) NULL,
+    [rate1] NVARCHAR(MAX) NULL,
+    [rate2] NVARCHAR(MAX) NULL,
+    [x_337_343] NVARCHAR(MAX) NULL,
+    [to_date] NVARCHAR(MAX) NULL,
+    [svc_code] NVARCHAR(MAX) NULL,
+    [svc_desc] NVARCHAR(MAX) NULL,
+    [comment] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_ChildHistory
+FROM 'C:\LANFAM\csv\lanfam_childhis.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.ChildHistory') IS NOT NULL DROP TABLE lanfam.ChildHistory;
+CREATE TABLE lanfam.ChildHistory (
+    ChildHistoryID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_ChildHistory PRIMARY KEY,
+    [caseno] NVARCHAR(10) NULL,
+    [surname] NVARCHAR(32) NULL,
+    [given] NVARCHAR(32) NULL,
+    [x_052_137] NVARCHAR(95) NULL,
+    [x_137_147] NVARCHAR(20) NULL,
+    [x_147_157] NVARCHAR(20) NULL,
+    [x_157_158] NVARCHAR(11) NULL,
+    [event_date] DATE NULL,
+    [event_code] NVARCHAR(12) NULL,
+    [event_desc] NVARCHAR(31) NULL,
+    [x_191_193] NVARCHAR(12) NULL,
+    [x_193_220] NVARCHAR(37) NULL,
+    [res_type] NVARCHAR(5) NULL,
+    [resno] NVARCHAR(20) NULL,
+    [res_surname] NVARCHAR(32) NULL,
+    [res_given] NVARCHAR(25) NULL,
+    [res_addr1] NVARCHAR(32) NULL,
+    [res_addr2] NVARCHAR(32) NULL,
+    [res_postal] NVARCHAR(17) NULL,
+    [res_phone] NVARCHAR(20) NULL,
+    [rate1] NVARCHAR(16) NULL,
+    [rate2] NVARCHAR(16) NULL,
+    [x_337_343] NVARCHAR(16) NULL,
+    [to_date] NVARCHAR(20) NULL,
+    [svc_code] NVARCHAR(12) NULL,
+    [svc_desc] NVARCHAR(35) NULL,
+    [comment] NVARCHAR(25) NULL
+);
+INSERT INTO lanfam.ChildHistory ([caseno], [surname], [given], [x_052_137], [x_137_147], [x_147_157], [x_157_158], [event_date], [event_code], [event_desc], [x_191_193], [x_193_220], [res_type], [resno], [res_surname], [res_given], [res_addr1], [res_addr2], [res_postal], [res_phone], [rate1], [rate2], [x_337_343], [to_date], [svc_code], [svc_desc], [comment])
+SELECT
+    NULLIF(LTRIM(RTRIM([caseno])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([given])), ''),
+    NULLIF(LTRIM(RTRIM([x_052_137])), ''),
+    NULLIF(LTRIM(RTRIM([x_137_147])), ''),
+    NULLIF(LTRIM(RTRIM([x_147_157])), ''),
+    NULLIF(LTRIM(RTRIM([x_157_158])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([event_date])), '')),
+    NULLIF(LTRIM(RTRIM([event_code])), ''),
+    NULLIF(LTRIM(RTRIM([event_desc])), ''),
+    NULLIF(LTRIM(RTRIM([x_191_193])), ''),
+    NULLIF(LTRIM(RTRIM([x_193_220])), ''),
+    NULLIF(LTRIM(RTRIM([res_type])), ''),
+    NULLIF(LTRIM(RTRIM([resno])), ''),
+    NULLIF(LTRIM(RTRIM([res_surname])), ''),
+    NULLIF(LTRIM(RTRIM([res_given])), ''),
+    NULLIF(LTRIM(RTRIM([res_addr1])), ''),
+    NULLIF(LTRIM(RTRIM([res_addr2])), ''),
+    NULLIF(LTRIM(RTRIM([res_postal])), ''),
+    NULLIF(LTRIM(RTRIM([res_phone])), ''),
+    NULLIF(LTRIM(RTRIM([rate1])), ''),
+    NULLIF(LTRIM(RTRIM([rate2])), ''),
+    NULLIF(LTRIM(RTRIM([x_337_343])), ''),
+    NULLIF(LTRIM(RTRIM([to_date])), ''),
+    NULLIF(LTRIM(RTRIM([svc_code])), ''),
+    NULLIF(LTRIM(RTRIM([svc_desc])), ''),
+    NULLIF(LTRIM(RTRIM([comment])), '')
+FROM lanfam.stg_ChildHistory;
+DROP TABLE lanfam.stg_ChildHistory;
+GO
+
+/* ---------- CostPurchase: Cost purchase lines (COSTPUR.DAT) (12,182 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_CostPurchase') IS NOT NULL DROP TABLE lanfam.stg_CostPurchase;
+CREATE TABLE lanfam.stg_CostPurchase (
+    [caseno] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [given] NVARCHAR(MAX) NULL,
+    [resno] NVARCHAR(MAX) NULL,
+    [x_062_067] NVARCHAR(MAX) NULL,
+    [from_date] NVARCHAR(MAX) NULL,
+    [to_date] NVARCHAR(MAX) NULL,
+    [days] NVARCHAR(MAX) NULL,
+    [rate1] NVARCHAR(MAX) NULL,
+    [rate2] NVARCHAR(MAX) NULL,
+    [cost_code] NVARCHAR(MAX) NULL,
+    [amount] NVARCHAR(MAX) NULL,
+    [x_118_124] NVARCHAR(MAX) NULL,
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [post_date] NVARCHAR(MAX) NULL,
+    [comment] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_CostPurchase
+FROM 'C:\LANFAM\csv\lanfam_costpur.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.CostPurchase') IS NOT NULL DROP TABLE lanfam.CostPurchase;
+CREATE TABLE lanfam.CostPurchase (
+    CostPurchaseID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CostPurchase PRIMARY KEY,
+    [caseno] NVARCHAR(10) NULL,
+    [surname] NVARCHAR(31) NULL,
+    [given] NVARCHAR(32) NULL,
+    [resno] NVARCHAR(20) NULL,
+    [x_062_067] NVARCHAR(15) NULL,
+    [from_date] DATE NULL,
+    [to_date] DATE NULL,
+    [days] NVARCHAR(12) NULL,
+    [rate1] NVARCHAR(15) NULL,
+    [rate2] NVARCHAR(15) NULL,
+    [cost_code] NVARCHAR(12) NULL,
+    [amount] NVARCHAR(23) NULL,
+    [x_118_124] NVARCHAR(13) NULL,
+    [worker_cd] NVARCHAR(5) NULL,
+    [post_date] DATE NULL,
+    [comment] NVARCHAR(25) NULL
+);
+INSERT INTO lanfam.CostPurchase ([caseno], [surname], [given], [resno], [x_062_067], [from_date], [to_date], [days], [rate1], [rate2], [cost_code], [amount], [x_118_124], [worker_cd], [post_date], [comment])
+SELECT
+    NULLIF(LTRIM(RTRIM([caseno])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([given])), ''),
+    NULLIF(LTRIM(RTRIM([resno])), ''),
+    NULLIF(LTRIM(RTRIM([x_062_067])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([from_date])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([to_date])), '')),
+    NULLIF(LTRIM(RTRIM([days])), ''),
+    NULLIF(LTRIM(RTRIM([rate1])), ''),
+    NULLIF(LTRIM(RTRIM([rate2])), ''),
+    NULLIF(LTRIM(RTRIM([cost_code])), ''),
+    NULLIF(LTRIM(RTRIM([amount])), ''),
+    NULLIF(LTRIM(RTRIM([x_118_124])), ''),
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([post_date])), '')),
+    NULLIF(LTRIM(RTRIM([comment])), '')
+FROM lanfam.stg_CostPurchase;
+DROP TABLE lanfam.stg_CostPurchase;
+GO
+
+/* ---------- CostEdit: Cost edit audit trail (EDITCOST.DAT) (2,326 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_CostEdit') IS NOT NULL DROP TABLE lanfam.stg_CostEdit;
+CREATE TABLE lanfam.stg_CostEdit (
+    [action] NVARCHAR(MAX) NULL,
+    [caseno] NVARCHAR(MAX) NULL,
+    [edit_date] NVARCHAR(MAX) NULL,
+    [edit_comment] NVARCHAR(MAX) NULL,
+    [caseno2] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [given] NVARCHAR(MAX) NULL,
+    [x_115_120] NVARCHAR(MAX) NULL,
+    [res_code] NVARCHAR(MAX) NULL,
+    [res_abbrev] NVARCHAR(MAX) NULL,
+    [from_date] NVARCHAR(MAX) NULL,
+    [to_date] NVARCHAR(MAX) NULL,
+    [days] NVARCHAR(MAX) NULL,
+    [rate1] NVARCHAR(MAX) NULL,
+    [rate2] NVARCHAR(MAX) NULL,
+    [cost_code] NVARCHAR(MAX) NULL,
+    [amount] NVARCHAR(MAX) NULL,
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [post_date] NVARCHAR(MAX) NULL,
+    [x_200_215] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_CostEdit
+FROM 'C:\LANFAM\csv\lanfam_editcost.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.CostEdit') IS NOT NULL DROP TABLE lanfam.CostEdit;
+CREATE TABLE lanfam.CostEdit (
+    CostEditID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CostEdit PRIMARY KEY,
+    [action] NVARCHAR(12) NULL,
+    [caseno] NVARCHAR(10) NULL,
+    [edit_date] DATE NULL,
+    [edit_comment] NVARCHAR(55) NULL,
+    [caseno2] NVARCHAR(10) NULL,
+    [surname] NVARCHAR(32) NULL,
+    [given] NVARCHAR(31) NULL,
+    [x_115_120] NVARCHAR(15) NULL,
+    [res_code] NVARCHAR(15) NULL,
+    [res_abbrev] NVARCHAR(15) NULL,
+    [from_date] DATE NULL,
+    [to_date] DATE NULL,
+    [days] NVARCHAR(12) NULL,
+    [rate1] NVARCHAR(16) NULL,
+    [rate2] NVARCHAR(16) NULL,
+    [cost_code] NVARCHAR(12) NULL,
+    [amount] NVARCHAR(30) NULL,
+    [worker_cd] NVARCHAR(5) NULL,
+    [post_date] DATE NULL,
+    [x_200_215] NVARCHAR(25) NULL
+);
+INSERT INTO lanfam.CostEdit ([action], [caseno], [edit_date], [edit_comment], [caseno2], [surname], [given], [x_115_120], [res_code], [res_abbrev], [from_date], [to_date], [days], [rate1], [rate2], [cost_code], [amount], [worker_cd], [post_date], [x_200_215])
+SELECT
+    NULLIF(LTRIM(RTRIM([action])), ''),
+    NULLIF(LTRIM(RTRIM([caseno])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([edit_date])), '')),
+    NULLIF(LTRIM(RTRIM([edit_comment])), ''),
+    NULLIF(LTRIM(RTRIM([caseno2])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([given])), ''),
+    NULLIF(LTRIM(RTRIM([x_115_120])), ''),
+    NULLIF(LTRIM(RTRIM([res_code])), ''),
+    NULLIF(LTRIM(RTRIM([res_abbrev])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([from_date])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([to_date])), '')),
+    NULLIF(LTRIM(RTRIM([days])), ''),
+    NULLIF(LTRIM(RTRIM([rate1])), ''),
+    NULLIF(LTRIM(RTRIM([rate2])), ''),
+    NULLIF(LTRIM(RTRIM([cost_code])), ''),
+    NULLIF(LTRIM(RTRIM([amount])), ''),
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([post_date])), '')),
+    NULLIF(LTRIM(RTRIM([x_200_215])), '')
+FROM lanfam.stg_CostEdit;
+DROP TABLE lanfam.stg_CostEdit;
+GO
+
+/* ---------- Worker: Worker/supervisor roster (WORKER.DAT) (170 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Worker') IS NOT NULL DROP TABLE lanfam.stg_Worker;
+CREATE TABLE lanfam.stg_Worker (
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [worker] NVARCHAR(MAX) NULL,
+    [supervisor] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Worker
+FROM 'C:\LANFAM\csv\lanfam_worker.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Worker') IS NOT NULL DROP TABLE lanfam.Worker;
+CREATE TABLE lanfam.Worker (
+    WorkerID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Worker PRIMARY KEY,
+    [worker_cd] NVARCHAR(5) NULL,
+    [worker] NVARCHAR(30) NULL,
+    [supervisor] NVARCHAR(25) NULL
+);
+INSERT INTO lanfam.Worker ([worker_cd], [worker], [supervisor])
+SELECT
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    NULLIF(LTRIM(RTRIM([worker])), ''),
+    NULLIF(LTRIM(RTRIM([supervisor])), '')
+FROM lanfam.stg_Worker;
+DROP TABLE lanfam.stg_Worker;
+GO
+
+/* ---------- BillingPeriod: Billing periods (CUSTOM.DAT) (147 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_BillingPeriod') IS NOT NULL DROP TABLE lanfam.stg_BillingPeriod;
+CREATE TABLE lanfam.stg_BillingPeriod (
+    [period_start] NVARCHAR(MAX) NULL,
+    [period_end] NVARCHAR(MAX) NULL,
+    [x_21] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_BillingPeriod
+FROM 'C:\LANFAM\csv\lanfam_custom.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.BillingPeriod') IS NOT NULL DROP TABLE lanfam.BillingPeriod;
+CREATE TABLE lanfam.BillingPeriod (
+    BillingPeriodID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_BillingPeriod PRIMARY KEY,
+    [period_start] NVARCHAR(21) NULL,
+    [period_end] NVARCHAR(20) NULL,
+    [x_21] NVARCHAR(11) NULL
+);
+INSERT INTO lanfam.BillingPeriod ([period_start], [period_end], [x_21])
+SELECT
+    NULLIF(LTRIM(RTRIM([period_start])), ''),
+    NULLIF(LTRIM(RTRIM([period_end])), ''),
+    NULLIF(LTRIM(RTRIM([x_21])), '')
+FROM lanfam.stg_BillingPeriod;
+DROP TABLE lanfam.stg_BillingPeriod;
+GO
+
+/* ---------- CodesCase: Lookup codes - CASE folder (589 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_CodesCase') IS NOT NULL DROP TABLE lanfam.stg_CodesCase;
+CREATE TABLE lanfam.stg_CodesCase (
+    [code_key] NVARCHAR(MAX) NULL,
+    [category] NVARCHAR(MAX) NULL,
+    [code] NVARCHAR(MAX) NULL,
+    [description] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_CodesCase
+FROM 'C:\LANFAM\csv\lanfam_codes_case.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.CodesCase') IS NOT NULL DROP TABLE lanfam.CodesCase;
+CREATE TABLE lanfam.CodesCase (
+    CodesCaseID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CodesCase PRIMARY KEY,
+    [code_key] NVARCHAR(13) NULL,
+    [category] NVARCHAR(12) NULL,
+    [code] NVARCHAR(12) NULL,
+    [description] NVARCHAR(41) NULL
+);
+INSERT INTO lanfam.CodesCase ([code_key], [category], [code], [description])
+SELECT
+    NULLIF(LTRIM(RTRIM([code_key])), ''),
+    NULLIF(LTRIM(RTRIM([category])), ''),
+    NULLIF(LTRIM(RTRIM([code])), ''),
+    NULLIF(LTRIM(RTRIM([description])), '')
+FROM lanfam.stg_CodesCase;
+DROP TABLE lanfam.stg_CodesCase;
+GO
+
+/* ---------- CodesFamily: Lookup codes - FAMILY folder (469 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_CodesFamily') IS NOT NULL DROP TABLE lanfam.stg_CodesFamily;
+CREATE TABLE lanfam.stg_CodesFamily (
+    [code_key] NVARCHAR(MAX) NULL,
+    [category] NVARCHAR(MAX) NULL,
+    [code] NVARCHAR(MAX) NULL,
+    [description] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_CodesFamily
+FROM 'C:\LANFAM\csv\lanfam_codes_family.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.CodesFamily') IS NOT NULL DROP TABLE lanfam.CodesFamily;
+CREATE TABLE lanfam.CodesFamily (
+    CodesFamilyID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CodesFamily PRIMARY KEY,
+    [code_key] NVARCHAR(13) NULL,
+    [category] NVARCHAR(12) NULL,
+    [code] NVARCHAR(12) NULL,
+    [description] NVARCHAR(41) NULL
+);
+INSERT INTO lanfam.CodesFamily ([code_key], [category], [code], [description])
+SELECT
+    NULLIF(LTRIM(RTRIM([code_key])), ''),
+    NULLIF(LTRIM(RTRIM([category])), ''),
+    NULLIF(LTRIM(RTRIM([code])), ''),
+    NULLIF(LTRIM(RTRIM([description])), '')
+FROM lanfam.stg_CodesFamily;
+DROP TABLE lanfam.stg_CodesFamily;
+GO
+
+/* ---------- Family: Family master, numeric keys (FAMILY.DAT) (6,506 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Family') IS NOT NULL DROP TABLE lanfam.stg_Family;
+CREATE TABLE lanfam.stg_Family (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0008] NVARCHAR(MAX) NULL,
+    [col_0027] NVARCHAR(MAX) NULL,
+    [col_0092] NVARCHAR(MAX) NULL,
+    [col_0254] NVARCHAR(MAX) NULL,
+    [col_0262] NVARCHAR(MAX) NULL,
+    [col_0363] NVARCHAR(MAX) NULL,
+    [col_0424] NVARCHAR(MAX) NULL,
+    [col_0558] NVARCHAR(MAX) NULL,
+    [col_0611] NVARCHAR(MAX) NULL,
+    [col_0692] NVARCHAR(MAX) NULL,
+    [col_0745] NVARCHAR(MAX) NULL,
+    [col_0757] NVARCHAR(MAX) NULL,
+    [col_0760] NVARCHAR(MAX) NULL,
+    [col_0826] NVARCHAR(MAX) NULL,
+    [col_0972] NVARCHAR(MAX) NULL,
+    [col_1164] NVARCHAR(MAX) NULL,
+    [col_1185] NVARCHAR(MAX) NULL,
+    [col_1218] NVARCHAR(MAX) NULL,
+    [col_1236] NVARCHAR(MAX) NULL,
+    [col_1267] NVARCHAR(MAX) NULL,
+    [col_1295] NVARCHAR(MAX) NULL,
+    [col_1298] NVARCHAR(MAX) NULL,
+    [col_1316] NVARCHAR(MAX) NULL,
+    [col_1344] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Family
+FROM 'C:\LANFAM\csv\lanfam_family.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Family') IS NOT NULL DROP TABLE lanfam.Family;
+CREATE TABLE lanfam.Family (
+    FamilyID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Family PRIMARY KEY,
+    [famno] NVARCHAR(20) NULL,
+    [col_0008] NVARCHAR(28) NULL,
+    [col_0027] NVARCHAR(71) NULL,
+    [col_0092] NVARCHAR(171) NULL,
+    [col_0254] NVARCHAR(16) NULL,
+    [col_0262] NVARCHAR(109) NULL,
+    [col_0363] NVARCHAR(70) NULL,
+    [col_0424] NVARCHAR(143) NULL,
+    [col_0558] NVARCHAR(62) NULL,
+    [col_0611] NVARCHAR(90) NULL,
+    [col_0692] NVARCHAR(61) NULL,
+    [col_0745] NVARCHAR(21) NULL,
+    [col_0757] NVARCHAR(12) NULL,
+    [col_0760] NVARCHAR(75) NULL,
+    [col_0826] NVARCHAR(155) NULL,
+    [col_0972] NVARCHAR(201) NULL,
+    [col_1164] NVARCHAR(24) NULL,
+    [col_1185] NVARCHAR(35) NULL,
+    [col_1218] NVARCHAR(15) NULL,
+    [col_1236] NVARCHAR(30) NULL,
+    [col_1267] NVARCHAR(14) NULL,
+    [col_1295] NVARCHAR(12) NULL,
+    [col_1298] NVARCHAR(22) NULL,
+    [col_1316] NVARCHAR(17) NULL,
+    [col_1344] NVARCHAR(136) NULL
+);
+INSERT INTO lanfam.Family ([famno], [col_0008], [col_0027], [col_0092], [col_0254], [col_0262], [col_0363], [col_0424], [col_0558], [col_0611], [col_0692], [col_0745], [col_0757], [col_0760], [col_0826], [col_0972], [col_1164], [col_1185], [col_1218], [col_1236], [col_1267], [col_1295], [col_1298], [col_1316], [col_1344])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0008])), ''),
+    NULLIF(LTRIM(RTRIM([col_0027])), ''),
+    NULLIF(LTRIM(RTRIM([col_0092])), ''),
+    NULLIF(LTRIM(RTRIM([col_0254])), ''),
+    NULLIF(LTRIM(RTRIM([col_0262])), ''),
+    NULLIF(LTRIM(RTRIM([col_0363])), ''),
+    NULLIF(LTRIM(RTRIM([col_0424])), ''),
+    NULLIF(LTRIM(RTRIM([col_0558])), ''),
+    NULLIF(LTRIM(RTRIM([col_0611])), ''),
+    NULLIF(LTRIM(RTRIM([col_0692])), ''),
+    NULLIF(LTRIM(RTRIM([col_0745])), ''),
+    NULLIF(LTRIM(RTRIM([col_0757])), ''),
+    NULLIF(LTRIM(RTRIM([col_0760])), ''),
+    NULLIF(LTRIM(RTRIM([col_0826])), ''),
+    NULLIF(LTRIM(RTRIM([col_0972])), ''),
+    NULLIF(LTRIM(RTRIM([col_1164])), ''),
+    NULLIF(LTRIM(RTRIM([col_1185])), ''),
+    NULLIF(LTRIM(RTRIM([col_1218])), ''),
+    NULLIF(LTRIM(RTRIM([col_1236])), ''),
+    NULLIF(LTRIM(RTRIM([col_1267])), ''),
+    NULLIF(LTRIM(RTRIM([col_1295])), ''),
+    NULLIF(LTRIM(RTRIM([col_1298])), ''),
+    NULLIF(LTRIM(RTRIM([col_1316])), ''),
+    NULLIF(LTRIM(RTRIM([col_1344])), '')
+FROM lanfam.stg_Family;
+DROP TABLE lanfam.stg_Family;
+GO
+
+/* ---------- Fam2: Family master, S/J keys (FAM2.DAT) (6,785 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Fam2') IS NOT NULL DROP TABLE lanfam.stg_Fam2;
+CREATE TABLE lanfam.stg_Fam2 (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0009] NVARCHAR(MAX) NULL,
+    [col_0027] NVARCHAR(MAX) NULL,
+    [col_0044] NVARCHAR(MAX) NULL,
+    [col_0112] NVARCHAR(MAX) NULL,
+    [col_0154] NVARCHAR(MAX) NULL,
+    [col_0215] NVARCHAR(MAX) NULL,
+    [col_0268] NVARCHAR(MAX) NULL,
+    [col_0288] NVARCHAR(MAX) NULL,
+    [col_0349] NVARCHAR(MAX) NULL,
+    [col_0422] NVARCHAR(MAX) NULL,
+    [col_0483] NVARCHAR(MAX) NULL,
+    [col_0508] NVARCHAR(MAX) NULL,
+    [col_0536] NVARCHAR(MAX) NULL,
+    [col_0556] NVARCHAR(MAX) NULL,
+    [col_0617] NVARCHAR(MAX) NULL,
+    [col_0646] NVARCHAR(MAX) NULL,
+    [col_0813] NVARCHAR(MAX) NULL,
+    [col_0857] NVARCHAR(MAX) NULL,
+    [col_0862] NVARCHAR(MAX) NULL,
+    [col_0911] NVARCHAR(MAX) NULL,
+    [col_0960] NVARCHAR(MAX) NULL,
+    [col_0976] NVARCHAR(MAX) NULL,
+    [col_1009] NVARCHAR(MAX) NULL,
+    [col_1017] NVARCHAR(MAX) NULL,
+    [col_1021] NVARCHAR(MAX) NULL,
+    [col_1025] NVARCHAR(MAX) NULL,
+    [col_1058] NVARCHAR(MAX) NULL,
+    [col_1063] NVARCHAR(MAX) NULL,
+    [col_1070] NVARCHAR(MAX) NULL,
+    [col_1074] NVARCHAR(MAX) NULL,
+    [col_1086] NVARCHAR(MAX) NULL,
+    [col_1119] NVARCHAR(MAX) NULL,
+    [col_1137] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Fam2
+FROM 'C:\LANFAM\csv\lanfam_fam2.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Fam2') IS NOT NULL DROP TABLE lanfam.Fam2;
+CREATE TABLE lanfam.Fam2 (
+    Fam2ID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Fam2 PRIMARY KEY,
+    [famno] NVARCHAR(20) NULL,
+    [col_0009] NVARCHAR(27) NULL,
+    [col_0027] NVARCHAR(25) NULL,
+    [col_0044] NVARCHAR(77) NULL,
+    [col_0112] NVARCHAR(51) NULL,
+    [col_0154] NVARCHAR(70) NULL,
+    [col_0215] NVARCHAR(59) NULL,
+    [col_0268] NVARCHAR(24) NULL,
+    [col_0288] NVARCHAR(70) NULL,
+    [col_0349] NVARCHAR(80) NULL,
+    [col_0422] NVARCHAR(70) NULL,
+    [col_0483] NVARCHAR(33) NULL,
+    [col_0508] NVARCHAR(28) NULL,
+    [col_0536] NVARCHAR(28) NULL,
+    [col_0556] NVARCHAR(70) NULL,
+    [col_0617] NVARCHAR(37) NULL,
+    [col_0646] NVARCHAR(175) NULL,
+    [col_0813] NVARCHAR(53) NULL,
+    [col_0857] NVARCHAR(14) NULL,
+    [col_0862] NVARCHAR(51) NULL,
+    [col_0911] NVARCHAR(50) NULL,
+    [col_0960] NVARCHAR(24) NULL,
+    [col_0976] NVARCHAR(34) NULL,
+    [col_1009] NVARCHAR(17) NULL,
+    [col_1017] NVARCHAR(13) NULL,
+    [col_1021] NVARCHAR(12) NULL,
+    [col_1025] NVARCHAR(32) NULL,
+    [col_1058] NVARCHAR(14) NULL,
+    [col_1063] NVARCHAR(11) NULL,
+    [col_1070] NVARCHAR(12) NULL,
+    [col_1074] NVARCHAR(12) NULL,
+    [col_1086] NVARCHAR(13) NULL,
+    [col_1119] NVARCHAR(12) NULL,
+    [col_1137] NVARCHAR(14) NULL
+);
+INSERT INTO lanfam.Fam2 ([famno], [col_0009], [col_0027], [col_0044], [col_0112], [col_0154], [col_0215], [col_0268], [col_0288], [col_0349], [col_0422], [col_0483], [col_0508], [col_0536], [col_0556], [col_0617], [col_0646], [col_0813], [col_0857], [col_0862], [col_0911], [col_0960], [col_0976], [col_1009], [col_1017], [col_1021], [col_1025], [col_1058], [col_1063], [col_1070], [col_1074], [col_1086], [col_1119], [col_1137])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0009])), ''),
+    NULLIF(LTRIM(RTRIM([col_0027])), ''),
+    NULLIF(LTRIM(RTRIM([col_0044])), ''),
+    NULLIF(LTRIM(RTRIM([col_0112])), ''),
+    NULLIF(LTRIM(RTRIM([col_0154])), ''),
+    NULLIF(LTRIM(RTRIM([col_0215])), ''),
+    NULLIF(LTRIM(RTRIM([col_0268])), ''),
+    NULLIF(LTRIM(RTRIM([col_0288])), ''),
+    NULLIF(LTRIM(RTRIM([col_0349])), ''),
+    NULLIF(LTRIM(RTRIM([col_0422])), ''),
+    NULLIF(LTRIM(RTRIM([col_0483])), ''),
+    NULLIF(LTRIM(RTRIM([col_0508])), ''),
+    NULLIF(LTRIM(RTRIM([col_0536])), ''),
+    NULLIF(LTRIM(RTRIM([col_0556])), ''),
+    NULLIF(LTRIM(RTRIM([col_0617])), ''),
+    NULLIF(LTRIM(RTRIM([col_0646])), ''),
+    NULLIF(LTRIM(RTRIM([col_0813])), ''),
+    NULLIF(LTRIM(RTRIM([col_0857])), ''),
+    NULLIF(LTRIM(RTRIM([col_0862])), ''),
+    NULLIF(LTRIM(RTRIM([col_0911])), ''),
+    NULLIF(LTRIM(RTRIM([col_0960])), ''),
+    NULLIF(LTRIM(RTRIM([col_0976])), ''),
+    NULLIF(LTRIM(RTRIM([col_1009])), ''),
+    NULLIF(LTRIM(RTRIM([col_1017])), ''),
+    NULLIF(LTRIM(RTRIM([col_1021])), ''),
+    NULLIF(LTRIM(RTRIM([col_1025])), ''),
+    NULLIF(LTRIM(RTRIM([col_1058])), ''),
+    NULLIF(LTRIM(RTRIM([col_1063])), ''),
+    NULLIF(LTRIM(RTRIM([col_1070])), ''),
+    NULLIF(LTRIM(RTRIM([col_1074])), ''),
+    NULLIF(LTRIM(RTRIM([col_1086])), ''),
+    NULLIF(LTRIM(RTRIM([col_1119])), ''),
+    NULLIF(LTRIM(RTRIM([col_1137])), '')
+FROM lanfam.stg_Fam2;
+DROP TABLE lanfam.stg_Fam2;
+GO
+
+/* ---------- FamilyHistory: Family open/close history (FAMHIST.DAT) (14,324 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_FamilyHistory') IS NOT NULL DROP TABLE lanfam.stg_FamilyHistory;
+CREATE TABLE lanfam.stg_FamilyHistory (
+    [famno] NVARCHAR(MAX) NULL,
+    [code] NVARCHAR(MAX) NULL,
+    [open_date] NVARCHAR(MAX) NULL,
+    [close_date] NVARCHAR(MAX) NULL,
+    [x_30_40] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_FamilyHistory
+FROM 'C:\LANFAM\csv\lanfam_famhist.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.FamilyHistory') IS NOT NULL DROP TABLE lanfam.FamilyHistory;
+CREATE TABLE lanfam.FamilyHistory (
+    FamilyHistoryID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_FamilyHistory PRIMARY KEY,
+    [famno] NVARCHAR(20) NULL,
+    [code] NVARCHAR(12) NULL,
+    [open_date] NVARCHAR(20) NULL,
+    [close_date] NVARCHAR(20) NULL,
+    [x_30_40] NVARCHAR(20) NULL
+);
+INSERT INTO lanfam.FamilyHistory ([famno], [code], [open_date], [close_date], [x_30_40])
+SELECT
+    NULLIF(LTRIM(RTRIM([famno])), ''),
+    NULLIF(LTRIM(RTRIM([code])), ''),
+    NULLIF(LTRIM(RTRIM([open_date])), ''),
+    NULLIF(LTRIM(RTRIM([close_date])), ''),
+    NULLIF(LTRIM(RTRIM([x_30_40])), '')
+FROM lanfam.stg_FamilyHistory;
+DROP TABLE lanfam.stg_FamilyHistory;
+GO
+
+/* ---------- Referral: Referrals w/ narrative (REFERRAL.DAT) (14,156 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Referral') IS NOT NULL DROP TABLE lanfam.stg_Referral;
+CREATE TABLE lanfam.stg_Referral (
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [caseno] NVARCHAR(MAX) NULL,
+    [ref_type] NVARCHAR(MAX) NULL,
+    [ref_date] NVARCHAR(MAX) NULL,
+    [ref_time] NVARCHAR(MAX) NULL,
+    [ref_code] NVARCHAR(MAX) NULL,
+    [source] NVARCHAR(MAX) NULL,
+    [code2] NVARCHAR(MAX) NULL,
+    [date2] NVARCHAR(MAX) NULL,
+    [worker2_cd] NVARCHAR(MAX) NULL,
+    [code3] NVARCHAR(MAX) NULL,
+    [famno] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [given] NVARCHAR(MAX) NULL,
+    [addr1] NVARCHAR(MAX) NULL,
+    [addr2] NVARCHAR(MAX) NULL,
+    [narr_code] NVARCHAR(MAX) NULL,
+    [narrative] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Referral
+FROM 'C:\LANFAM\csv\lanfam_referral.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Referral') IS NOT NULL DROP TABLE lanfam.Referral;
+CREATE TABLE lanfam.Referral (
+    ReferralID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Referral PRIMARY KEY,
+    [worker_cd] NVARCHAR(5) NULL,
+    [caseno] NVARCHAR(10) NULL,
+    [ref_type] NVARCHAR(11) NULL,
+    [ref_date] DATE NULL,
+    [ref_time] NVARCHAR(15) NULL,
+    [ref_code] NVARCHAR(12) NULL,
+    [source] NVARCHAR(52) NULL,
+    [code2] NVARCHAR(12) NULL,
+    [date2] DATE NULL,
+    [worker2_cd] NVARCHAR(5) NULL,
+    [code3] NVARCHAR(12) NULL,
+    [famno] NVARCHAR(20) NULL,
+    [surname] NVARCHAR(30) NULL,
+    [given] NVARCHAR(25) NULL,
+    [addr1] NVARCHAR(32) NULL,
+    [addr2] NVARCHAR(32) NULL,
+    [narr_code] NVARCHAR(12) NULL,
+    [narrative] NVARCHAR(MAX) NULL
+);
+INSERT INTO lanfam.Referral ([worker_cd], [caseno], [ref_type], [ref_date], [ref_time], [ref_code], [source], [code2], [date2], [worker2_cd], [code3], [famno], [surname], [given], [addr1], [addr2], [narr_code], [narrative])
+SELECT
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    NULLIF(LTRIM(RTRIM([caseno])), ''),
+    NULLIF(LTRIM(RTRIM([ref_type])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([ref_date])), '')),
+    NULLIF(LTRIM(RTRIM([ref_time])), ''),
+    NULLIF(LTRIM(RTRIM([ref_code])), ''),
+    NULLIF(LTRIM(RTRIM([source])), ''),
+    NULLIF(LTRIM(RTRIM([code2])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date2])), '')),
+    NULLIF(LTRIM(RTRIM([worker2_cd])), ''),
+    NULLIF(LTRIM(RTRIM([code3])), ''),
+    NULLIF(LTRIM(RTRIM([famno])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([given])), ''),
+    NULLIF(LTRIM(RTRIM([addr1])), ''),
+    NULLIF(LTRIM(RTRIM([addr2])), ''),
+    NULLIF(LTRIM(RTRIM([narr_code])), ''),
+    NULLIF(LTRIM(RTRIM([narrative])), '')
+FROM lanfam.stg_Referral;
+DROP TABLE lanfam.stg_Referral;
+GO
+
+/* ---------- CrossRef: Person-family cross-reference (CROSSRE2.DAT) (30,546 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_CrossRef') IS NOT NULL DROP TABLE lanfam.stg_CrossRef;
+CREATE TABLE lanfam.stg_CrossRef (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0030] NVARCHAR(MAX) NULL,
+    [col_0065] NVARCHAR(MAX) NULL,
+    [col_0137] NVARCHAR(MAX) NULL,
+    [col_0379] NVARCHAR(MAX) NULL,
+    [col_0389] NVARCHAR(MAX) NULL,
+    [col_0414] NVARCHAR(MAX) NULL,
+    [col_0424] NVARCHAR(MAX) NULL,
+    [col_0449] NVARCHAR(MAX) NULL,
+    [col_0459] NVARCHAR(MAX) NULL,
+    [col_0477] NVARCHAR(MAX) NULL,
+    [col_0554] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_CrossRef
+FROM 'C:\LANFAM\csv\lanfam_crossre2.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.CrossRef') IS NOT NULL DROP TABLE lanfam.CrossRef;
+CREATE TABLE lanfam.CrossRef (
+    CrossRefID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CrossRef PRIMARY KEY,
+    [col_0001] NVARCHAR(35) NULL,
+    [col_0030] NVARCHAR(40) NULL,
+    [col_0065] NVARCHAR(77) NULL,
+    [col_0137] NVARCHAR(250) NULL,
+    [col_0379] NVARCHAR(19) NULL,
+    [col_0389] NVARCHAR(33) NULL,
+    [col_0414] NVARCHAR(19) NULL,
+    [col_0424] NVARCHAR(33) NULL,
+    [col_0449] NVARCHAR(16) NULL,
+    [col_0459] NVARCHAR(20) NULL,
+    [col_0477] NVARCHAR(15) NULL,
+    [col_0554] NVARCHAR(26) NULL
+);
+INSERT INTO lanfam.CrossRef ([col_0001], [col_0030], [col_0065], [col_0137], [col_0379], [col_0389], [col_0414], [col_0424], [col_0449], [col_0459], [col_0477], [col_0554])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0030])), ''),
+    NULLIF(LTRIM(RTRIM([col_0065])), ''),
+    NULLIF(LTRIM(RTRIM([col_0137])), ''),
+    NULLIF(LTRIM(RTRIM([col_0379])), ''),
+    NULLIF(LTRIM(RTRIM([col_0389])), ''),
+    NULLIF(LTRIM(RTRIM([col_0414])), ''),
+    NULLIF(LTRIM(RTRIM([col_0424])), ''),
+    NULLIF(LTRIM(RTRIM([col_0449])), ''),
+    NULLIF(LTRIM(RTRIM([col_0459])), ''),
+    NULLIF(LTRIM(RTRIM([col_0477])), ''),
+    NULLIF(LTRIM(RTRIM([col_0554])), '')
+FROM lanfam.stg_CrossRef;
+DROP TABLE lanfam.stg_CrossRef;
+GO
+
+/* ---------- NameIndex: Person name index (XREF.DAT) (56,782 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_NameIndex') IS NOT NULL DROP TABLE lanfam.stg_NameIndex;
+CREATE TABLE lanfam.stg_NameIndex (
+    [seq] NVARCHAR(MAX) NULL,
+    [surname] NVARCHAR(MAX) NULL,
+    [given] NVARCHAR(MAX) NULL,
+    [birthdate] NVARCHAR(MAX) NULL,
+    [reftype] NVARCHAR(MAX) NULL,
+    [x_49_50] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_NameIndex
+FROM 'C:\LANFAM\csv\lanfam_xref.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.NameIndex') IS NOT NULL DROP TABLE lanfam.NameIndex;
+CREATE TABLE lanfam.NameIndex (
+    NameIndexID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_NameIndex PRIMARY KEY,
+    [seq] NVARCHAR(17) NULL,
+    [surname] NVARCHAR(28) NULL,
+    [given] NVARCHAR(22) NULL,
+    [birthdate] NVARCHAR(20) NULL,
+    [reftype] NVARCHAR(12) NULL,
+    [x_49_50] NVARCHAR(11) NULL
+);
+INSERT INTO lanfam.NameIndex ([seq], [surname], [given], [birthdate], [reftype], [x_49_50])
+SELECT
+    NULLIF(LTRIM(RTRIM([seq])), ''),
+    NULLIF(LTRIM(RTRIM([surname])), ''),
+    NULLIF(LTRIM(RTRIM([given])), ''),
+    NULLIF(LTRIM(RTRIM([birthdate])), ''),
+    NULLIF(LTRIM(RTRIM([reftype])), ''),
+    NULLIF(LTRIM(RTRIM([x_49_50])), '')
+FROM lanfam.stg_NameIndex;
+DROP TABLE lanfam.stg_NameIndex;
+GO
+
+/* ---------- GeogArea: Street/geographic areas (GEOGAREA.DAT) (910 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_GeogArea') IS NOT NULL DROP TABLE lanfam.stg_GeogArea;
+CREATE TABLE lanfam.stg_GeogArea (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0036] NVARCHAR(MAX) NULL,
+    [col_0042] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_GeogArea
+FROM 'C:\LANFAM\csv\lanfam_geogarea.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.GeogArea') IS NOT NULL DROP TABLE lanfam.GeogArea;
+CREATE TABLE lanfam.GeogArea (
+    GeogAreaID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_GeogArea PRIMARY KEY,
+    [col_0001] NVARCHAR(33) NULL,
+    [col_0036] NVARCHAR(14) NULL,
+    [col_0042] NVARCHAR(14) NULL
+);
+INSERT INTO lanfam.GeogArea ([col_0001], [col_0036], [col_0042])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0036])), ''),
+    NULLIF(LTRIM(RTRIM([col_0042])), '')
+FROM lanfam.stg_GeogArea;
+DROP TABLE lanfam.stg_GeogArea;
+GO
+
+/* ---------- RefOld: Old referral format (REF.DAT) (23 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_RefOld') IS NOT NULL DROP TABLE lanfam.stg_RefOld;
+CREATE TABLE lanfam.stg_RefOld (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0050] NVARCHAR(MAX) NULL,
+    [col_0070] NVARCHAR(MAX) NULL,
+    [col_0085] NVARCHAR(MAX) NULL,
+    [col_0129] NVARCHAR(MAX) NULL,
+    [col_0371] NVARCHAR(MAX) NULL,
+    [col_0431] NVARCHAR(MAX) NULL,
+    [col_0505] NVARCHAR(MAX) NULL,
+    [col_0655] NVARCHAR(MAX) NULL,
+    [col_0730] NVARCHAR(MAX) NULL,
+    [col_0806] NVARCHAR(MAX) NULL,
+    [col_0881] NVARCHAR(MAX) NULL,
+    [col_0955] NVARCHAR(MAX) NULL,
+    [col_1011] NVARCHAR(MAX) NULL,
+    [col_1015] NVARCHAR(MAX) NULL,
+    [col_1024] NVARCHAR(MAX) NULL,
+    [col_1031] NVARCHAR(MAX) NULL,
+    [col_1078] NVARCHAR(MAX) NULL,
+    [col_1083] NVARCHAR(MAX) NULL,
+    [col_1089] NVARCHAR(MAX) NULL,
+    [col_1093] NVARCHAR(MAX) NULL,
+    [col_1097] NVARCHAR(MAX) NULL,
+    [col_1106] NVARCHAR(MAX) NULL,
+    [col_1181] NVARCHAR(MAX) NULL,
+    [col_1243] NVARCHAR(MAX) NULL,
+    [col_1256] NVARCHAR(MAX) NULL,
+    [col_1331] NVARCHAR(MAX) NULL,
+    [col_1375] NVARCHAR(MAX) NULL,
+    [col_1383] NVARCHAR(MAX) NULL,
+    [col_1389] NVARCHAR(MAX) NULL,
+    [col_1394] NVARCHAR(MAX) NULL,
+    [col_1406] NVARCHAR(MAX) NULL,
+    [col_1416] NVARCHAR(MAX) NULL,
+    [col_1446] NVARCHAR(MAX) NULL,
+    [col_1450] NVARCHAR(MAX) NULL,
+    [col_1456] NVARCHAR(MAX) NULL,
+    [col_1460] NVARCHAR(MAX) NULL,
+    [col_1465] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_RefOld
+FROM 'C:\LANFAM\csv\lanfam_ref.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.RefOld') IS NOT NULL DROP TABLE lanfam.RefOld;
+CREATE TABLE lanfam.RefOld (
+    RefOldID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_RefOld PRIMARY KEY,
+    [col_0001] NVARCHAR(57) NULL,
+    [col_0050] NVARCHAR(23) NULL,
+    [col_0070] NVARCHAR(19) NULL,
+    [col_0085] NVARCHAR(52) NULL,
+    [col_0129] NVARCHAR(251) NULL,
+    [col_0371] NVARCHAR(63) NULL,
+    [col_0431] NVARCHAR(82) NULL,
+    [col_0505] NVARCHAR(156) NULL,
+    [col_0655] NVARCHAR(80) NULL,
+    [col_0730] NVARCHAR(79) NULL,
+    [col_0806] NVARCHAR(78) NULL,
+    [col_0881] NVARCHAR(83) NULL,
+    [col_0955] NVARCHAR(64) NULL,
+    [col_1011] NVARCHAR(13) NULL,
+    [col_1015] NVARCHAR(18) NULL,
+    [col_1024] NVARCHAR(15) NULL,
+    [col_1031] NVARCHAR(56) NULL,
+    [col_1078] NVARCHAR(14) NULL,
+    [col_1083] NVARCHAR(15) NULL,
+    [col_1089] NVARCHAR(13) NULL,
+    [col_1093] NVARCHAR(13) NULL,
+    [col_1097] NVARCHAR(14) NULL,
+    [col_1106] NVARCHAR(80) NULL,
+    [col_1181] NVARCHAR(71) NULL,
+    [col_1243] NVARCHAR(13) NULL,
+    [col_1256] NVARCHAR(82) NULL,
+    [col_1331] NVARCHAR(53) NULL,
+    [col_1375] NVARCHAR(17) NULL,
+    [col_1383] NVARCHAR(15) NULL,
+    [col_1389] NVARCHAR(14) NULL,
+    [col_1394] NVARCHAR(12) NULL,
+    [col_1406] NVARCHAR(19) NULL,
+    [col_1416] NVARCHAR(39) NULL,
+    [col_1446] NVARCHAR(13) NULL,
+    [col_1450] NVARCHAR(15) NULL,
+    [col_1456] NVARCHAR(13) NULL,
+    [col_1460] NVARCHAR(14) NULL,
+    [col_1465] NVARCHAR(22) NULL
+);
+INSERT INTO lanfam.RefOld ([col_0001], [col_0050], [col_0070], [col_0085], [col_0129], [col_0371], [col_0431], [col_0505], [col_0655], [col_0730], [col_0806], [col_0881], [col_0955], [col_1011], [col_1015], [col_1024], [col_1031], [col_1078], [col_1083], [col_1089], [col_1093], [col_1097], [col_1106], [col_1181], [col_1243], [col_1256], [col_1331], [col_1375], [col_1383], [col_1389], [col_1394], [col_1406], [col_1416], [col_1446], [col_1450], [col_1456], [col_1460], [col_1465])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0050])), ''),
+    NULLIF(LTRIM(RTRIM([col_0070])), ''),
+    NULLIF(LTRIM(RTRIM([col_0085])), ''),
+    NULLIF(LTRIM(RTRIM([col_0129])), ''),
+    NULLIF(LTRIM(RTRIM([col_0371])), ''),
+    NULLIF(LTRIM(RTRIM([col_0431])), ''),
+    NULLIF(LTRIM(RTRIM([col_0505])), ''),
+    NULLIF(LTRIM(RTRIM([col_0655])), ''),
+    NULLIF(LTRIM(RTRIM([col_0730])), ''),
+    NULLIF(LTRIM(RTRIM([col_0806])), ''),
+    NULLIF(LTRIM(RTRIM([col_0881])), ''),
+    NULLIF(LTRIM(RTRIM([col_0955])), ''),
+    NULLIF(LTRIM(RTRIM([col_1011])), ''),
+    NULLIF(LTRIM(RTRIM([col_1015])), ''),
+    NULLIF(LTRIM(RTRIM([col_1024])), ''),
+    NULLIF(LTRIM(RTRIM([col_1031])), ''),
+    NULLIF(LTRIM(RTRIM([col_1078])), ''),
+    NULLIF(LTRIM(RTRIM([col_1083])), ''),
+    NULLIF(LTRIM(RTRIM([col_1089])), ''),
+    NULLIF(LTRIM(RTRIM([col_1093])), ''),
+    NULLIF(LTRIM(RTRIM([col_1097])), ''),
+    NULLIF(LTRIM(RTRIM([col_1106])), ''),
+    NULLIF(LTRIM(RTRIM([col_1181])), ''),
+    NULLIF(LTRIM(RTRIM([col_1243])), ''),
+    NULLIF(LTRIM(RTRIM([col_1256])), ''),
+    NULLIF(LTRIM(RTRIM([col_1331])), ''),
+    NULLIF(LTRIM(RTRIM([col_1375])), ''),
+    NULLIF(LTRIM(RTRIM([col_1383])), ''),
+    NULLIF(LTRIM(RTRIM([col_1389])), ''),
+    NULLIF(LTRIM(RTRIM([col_1394])), ''),
+    NULLIF(LTRIM(RTRIM([col_1406])), ''),
+    NULLIF(LTRIM(RTRIM([col_1416])), ''),
+    NULLIF(LTRIM(RTRIM([col_1446])), ''),
+    NULLIF(LTRIM(RTRIM([col_1450])), ''),
+    NULLIF(LTRIM(RTRIM([col_1456])), ''),
+    NULLIF(LTRIM(RTRIM([col_1460])), ''),
+    NULLIF(LTRIM(RTRIM([col_1465])), '')
+FROM lanfam.stg_RefOld;
+DROP TABLE lanfam.stg_RefOld;
+GO
+
+/* ---------- RefBackup: Referral backup (REFBAK.DAT) (1,284 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_RefBackup') IS NOT NULL DROP TABLE lanfam.stg_RefBackup;
+CREATE TABLE lanfam.stg_RefBackup (
+    [col_0001] NVARCHAR(MAX) NULL,
+    [col_0174] NVARCHAR(MAX) NULL,
+    [col_2532] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_RefBackup
+FROM 'C:\LANFAM\csv\lanfam_refbak.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.RefBackup') IS NOT NULL DROP TABLE lanfam.RefBackup;
+CREATE TABLE lanfam.RefBackup (
+    RefBackupID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_RefBackup PRIMARY KEY,
+    [col_0001] NVARCHAR(181) NULL,
+    [col_0174] NVARCHAR(MAX) NULL,
+    [col_2532] NVARCHAR(258) NULL
+);
+INSERT INTO lanfam.RefBackup ([col_0001], [col_0174], [col_2532])
+SELECT
+    NULLIF(LTRIM(RTRIM([col_0001])), ''),
+    NULLIF(LTRIM(RTRIM([col_0174])), ''),
+    NULLIF(LTRIM(RTRIM([col_2532])), '')
+FROM lanfam.stg_RefBackup;
+DROP TABLE lanfam.stg_RefBackup;
+GO
+
+/* ---------- Resource: Foster/resource homes (RESOURCE.DAT) (1,645 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Resource') IS NOT NULL DROP TABLE lanfam.stg_Resource;
+CREATE TABLE lanfam.stg_Resource (
+    [resno] NVARCHAR(MAX) NULL,
+    [upd_date] NVARCHAR(MAX) NULL,
+    [resno2] NVARCHAR(MAX) NULL,
+    [open_date] NVARCHAR(MAX) NULL,
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [worker] NVARCHAR(MAX) NULL,
+    [surname1] NVARCHAR(MAX) NULL,
+    [given1] NVARCHAR(MAX) NULL,
+    [surname2] NVARCHAR(MAX) NULL,
+    [given2] NVARCHAR(MAX) NULL,
+    [addr1] NVARCHAR(MAX) NULL,
+    [addr2] NVARCHAR(MAX) NULL,
+    [postal] NVARCHAR(MAX) NULL,
+    [phone] NVARCHAR(MAX) NULL,
+    [employer] NVARCHAR(MAX) NULL,
+    [work_phone] NVARCHAR(MAX) NULL,
+    [x_241_275] NVARCHAR(MAX) NULL,
+    [capacity_cur] NVARCHAR(MAX) NULL,
+    [x_281_440] NVARCHAR(MAX) NULL,
+    [x_440_532] NVARCHAR(MAX) NULL,
+    [date_a] NVARCHAR(MAX) NULL,
+    [date_b] NVARCHAR(MAX) NULL,
+    [x_552_554] NVARCHAR(MAX) NULL,
+    [date_c] NVARCHAR(MAX) NULL,
+    [date_d] NVARCHAR(MAX) NULL,
+    [status_text] NVARCHAR(MAX) NULL,
+    [date_e] NVARCHAR(MAX) NULL,
+    [date_f] NVARCHAR(MAX) NULL,
+    [date_g] NVARCHAR(MAX) NULL,
+    [date_h] NVARCHAR(MAX) NULL,
+    [date_i] NVARCHAR(MAX) NULL,
+    [date_j] NVARCHAR(MAX) NULL,
+    [date_k] NVARCHAR(MAX) NULL,
+    [x_654_724] NVARCHAR(MAX) NULL,
+    [category] NVARCHAR(MAX) NULL,
+    [x_770_868] NVARCHAR(MAX) NULL,
+    [comment] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Resource
+FROM 'C:\LANFAM\csv\lanfam_resource.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Resource') IS NOT NULL DROP TABLE lanfam.Resource;
+CREATE TABLE lanfam.Resource (
+    ResourceID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Resource PRIMARY KEY,
+    [resno] NVARCHAR(20) NULL,
+    [upd_date] NVARCHAR(18) NULL,
+    [resno2] NVARCHAR(15) NULL,
+    [open_date] NVARCHAR(18) NULL,
+    [worker_cd] NVARCHAR(5) NULL,
+    [worker] NVARCHAR(25) NULL,
+    [surname1] NVARCHAR(32) NULL,
+    [given1] NVARCHAR(25) NULL,
+    [surname2] NVARCHAR(54) NULL,
+    [given2] NVARCHAR(25) NULL,
+    [addr1] NVARCHAR(32) NULL,
+    [addr2] NVARCHAR(32) NULL,
+    [postal] NVARCHAR(17) NULL,
+    [phone] NVARCHAR(22) NULL,
+    [employer] NVARCHAR(32) NULL,
+    [work_phone] NVARCHAR(22) NULL,
+    [x_241_275] NVARCHAR(44) NULL,
+    [capacity_cur] NVARCHAR(16) NULL,
+    [x_281_440] NVARCHAR(169) NULL,
+    [x_440_532] NVARCHAR(83) NULL,
+    [date_a] DATE NULL,
+    [date_b] DATE NULL,
+    [x_552_554] NVARCHAR(11) NULL,
+    [date_c] DATE NULL,
+    [date_d] DATE NULL,
+    [status_text] NVARCHAR(20) NULL,
+    [date_e] DATE NULL,
+    [date_f] DATE NULL,
+    [date_g] DATE NULL,
+    [date_h] DATE NULL,
+    [date_i] DATE NULL,
+    [date_j] DATE NULL,
+    [date_k] DATE NULL,
+    [x_654_724] NVARCHAR(80) NULL,
+    [category] NVARCHAR(56) NULL,
+    [x_770_868] NVARCHAR(108) NULL,
+    [comment] NVARCHAR(82) NULL
+);
+INSERT INTO lanfam.Resource ([resno], [upd_date], [resno2], [open_date], [worker_cd], [worker], [surname1], [given1], [surname2], [given2], [addr1], [addr2], [postal], [phone], [employer], [work_phone], [x_241_275], [capacity_cur], [x_281_440], [x_440_532], [date_a], [date_b], [x_552_554], [date_c], [date_d], [status_text], [date_e], [date_f], [date_g], [date_h], [date_i], [date_j], [date_k], [x_654_724], [category], [x_770_868], [comment])
+SELECT
+    NULLIF(LTRIM(RTRIM([resno])), ''),
+    NULLIF(LTRIM(RTRIM([upd_date])), ''),
+    NULLIF(LTRIM(RTRIM([resno2])), ''),
+    NULLIF(LTRIM(RTRIM([open_date])), ''),
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    NULLIF(LTRIM(RTRIM([worker])), ''),
+    NULLIF(LTRIM(RTRIM([surname1])), ''),
+    NULLIF(LTRIM(RTRIM([given1])), ''),
+    NULLIF(LTRIM(RTRIM([surname2])), ''),
+    NULLIF(LTRIM(RTRIM([given2])), ''),
+    NULLIF(LTRIM(RTRIM([addr1])), ''),
+    NULLIF(LTRIM(RTRIM([addr2])), ''),
+    NULLIF(LTRIM(RTRIM([postal])), ''),
+    NULLIF(LTRIM(RTRIM([phone])), ''),
+    NULLIF(LTRIM(RTRIM([employer])), ''),
+    NULLIF(LTRIM(RTRIM([work_phone])), ''),
+    NULLIF(LTRIM(RTRIM([x_241_275])), ''),
+    NULLIF(LTRIM(RTRIM([capacity_cur])), ''),
+    NULLIF(LTRIM(RTRIM([x_281_440])), ''),
+    NULLIF(LTRIM(RTRIM([x_440_532])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_a])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_b])), '')),
+    NULLIF(LTRIM(RTRIM([x_552_554])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_c])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_d])), '')),
+    NULLIF(LTRIM(RTRIM([status_text])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_e])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_f])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_g])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_h])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_i])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_j])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_k])), '')),
+    NULLIF(LTRIM(RTRIM([x_654_724])), ''),
+    NULLIF(LTRIM(RTRIM([category])), ''),
+    NULLIF(LTRIM(RTRIM([x_770_868])), ''),
+    NULLIF(LTRIM(RTRIM([comment])), '')
+FROM lanfam.stg_Resource;
+DROP TABLE lanfam.stg_Resource;
+GO
+
+/* ---------- Adoption: Adoption applicants (ADOPTION.DAT) (406 rows) ---------- */
+IF OBJECT_ID('lanfam.stg_Adoption') IS NOT NULL DROP TABLE lanfam.stg_Adoption;
+CREATE TABLE lanfam.stg_Adoption (
+    [adoptno] NVARCHAR(MAX) NULL,
+    [study_cd] NVARCHAR(MAX) NULL,
+    [worker_cd] NVARCHAR(MAX) NULL,
+    [worker] NVARCHAR(MAX) NULL,
+    [supervisor] NVARCHAR(MAX) NULL,
+    [flag1] NVARCHAR(MAX) NULL,
+    [applicant1] NVARCHAR(MAX) NULL,
+    [applicant2] NVARCHAR(MAX) NULL,
+    [addr1] NVARCHAR(MAX) NULL,
+    [addr2] NVARCHAR(MAX) NULL,
+    [postal] NVARCHAR(MAX) NULL,
+    [phone] NVARCHAR(MAX) NULL,
+    [birth1] NVARCHAR(MAX) NULL,
+    [x_203_213] NVARCHAR(MAX) NULL,
+    [birth2] NVARCHAR(MAX) NULL,
+    [x_223_233] NVARCHAR(MAX) NULL,
+    [marriage_date] NVARCHAR(MAX) NULL,
+    [x_243_270] NVARCHAR(MAX) NULL,
+    [date_d] NVARCHAR(MAX) NULL,
+    [x_280_298] NVARCHAR(MAX) NULL,
+    [date_e] NVARCHAR(MAX) NULL,
+    [x_308_326] NVARCHAR(MAX) NULL,
+    [date_f] NVARCHAR(MAX) NULL,
+    [x_336_365] NVARCHAR(MAX) NULL,
+    [codes] NVARCHAR(MAX) NULL,
+    [x_380_692] NVARCHAR(MAX) NULL,
+    [date_g] NVARCHAR(MAX) NULL,
+    [x_702_722] NVARCHAR(MAX) NULL,
+    [date_h] NVARCHAR(MAX) NULL,
+    [x_732_782] NVARCHAR(MAX) NULL,
+    [date_i] NVARCHAR(MAX) NULL,
+    [x_792_812] NVARCHAR(MAX) NULL,
+    [date_j] NVARCHAR(MAX) NULL,
+    [x_822_902] NVARCHAR(MAX) NULL,
+    [flag2] NVARCHAR(MAX) NULL,
+    [close_date] NVARCHAR(MAX) NULL,
+    [flag3] NVARCHAR(MAX) NULL
+);
+BULK INSERT lanfam.stg_Adoption
+FROM 'C:\LANFAM\csv\lanfam_adoption.csv'
+WITH (FORMAT='CSV', FIELDQUOTE='"', FIRSTROW=2,
+      CODEPAGE='65001', TABLOCK, MAXERRORS=0);
+
+IF OBJECT_ID('lanfam.Adoption') IS NOT NULL DROP TABLE lanfam.Adoption;
+CREATE TABLE lanfam.Adoption (
+    AdoptionID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Adoption PRIMARY KEY,
+    [adoptno] NVARCHAR(15) NULL,
+    [study_cd] NVARCHAR(14) NULL,
+    [worker_cd] NVARCHAR(5) NULL,
+    [worker] NVARCHAR(25) NULL,
+    [supervisor] NVARCHAR(23) NULL,
+    [flag1] NVARCHAR(11) NULL,
+    [applicant1] NVARCHAR(41) NULL,
+    [applicant2] NVARCHAR(48) NULL,
+    [addr1] NVARCHAR(32) NULL,
+    [addr2] NVARCHAR(31) NULL,
+    [postal] NVARCHAR(17) NULL,
+    [phone] NVARCHAR(20) NULL,
+    [birth1] DATE NULL,
+    [x_203_213] NVARCHAR(20) NULL,
+    [birth2] DATE NULL,
+    [x_223_233] NVARCHAR(20) NULL,
+    [marriage_date] DATE NULL,
+    [x_243_270] NVARCHAR(27) NULL,
+    [date_d] DATE NULL,
+    [x_280_298] NVARCHAR(28) NULL,
+    [date_e] DATE NULL,
+    [x_308_326] NVARCHAR(28) NULL,
+    [date_f] DATE NULL,
+    [x_336_365] NVARCHAR(39) NULL,
+    [codes] NVARCHAR(25) NULL,
+    [x_380_692] NVARCHAR(322) NULL,
+    [date_g] DATE NULL,
+    [x_702_722] NVARCHAR(30) NULL,
+    [date_h] DATE NULL,
+    [x_732_782] DATE NULL,
+    [date_i] DATE NULL,
+    [x_792_812] NVARCHAR(30) NULL,
+    [date_j] DATE NULL,
+    [x_822_902] NVARCHAR(60) NULL,
+    [flag2] NVARCHAR(11) NULL,
+    [close_date] DATE NULL,
+    [flag3] NVARCHAR(11) NULL
+);
+INSERT INTO lanfam.Adoption ([adoptno], [study_cd], [worker_cd], [worker], [supervisor], [flag1], [applicant1], [applicant2], [addr1], [addr2], [postal], [phone], [birth1], [x_203_213], [birth2], [x_223_233], [marriage_date], [x_243_270], [date_d], [x_280_298], [date_e], [x_308_326], [date_f], [x_336_365], [codes], [x_380_692], [date_g], [x_702_722], [date_h], [x_732_782], [date_i], [x_792_812], [date_j], [x_822_902], [flag2], [close_date], [flag3])
+SELECT
+    NULLIF(LTRIM(RTRIM([adoptno])), ''),
+    NULLIF(LTRIM(RTRIM([study_cd])), ''),
+    NULLIF(LTRIM(RTRIM([worker_cd])), ''),
+    NULLIF(LTRIM(RTRIM([worker])), ''),
+    NULLIF(LTRIM(RTRIM([supervisor])), ''),
+    NULLIF(LTRIM(RTRIM([flag1])), ''),
+    NULLIF(LTRIM(RTRIM([applicant1])), ''),
+    NULLIF(LTRIM(RTRIM([applicant2])), ''),
+    NULLIF(LTRIM(RTRIM([addr1])), ''),
+    NULLIF(LTRIM(RTRIM([addr2])), ''),
+    NULLIF(LTRIM(RTRIM([postal])), ''),
+    NULLIF(LTRIM(RTRIM([phone])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([birth1])), '')),
+    NULLIF(LTRIM(RTRIM([x_203_213])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([birth2])), '')),
+    NULLIF(LTRIM(RTRIM([x_223_233])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([marriage_date])), '')),
+    NULLIF(LTRIM(RTRIM([x_243_270])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_d])), '')),
+    NULLIF(LTRIM(RTRIM([x_280_298])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_e])), '')),
+    NULLIF(LTRIM(RTRIM([x_308_326])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_f])), '')),
+    NULLIF(LTRIM(RTRIM([x_336_365])), ''),
+    NULLIF(LTRIM(RTRIM([codes])), ''),
+    NULLIF(LTRIM(RTRIM([x_380_692])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_g])), '')),
+    NULLIF(LTRIM(RTRIM([x_702_722])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_h])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([x_732_782])), '')),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_i])), '')),
+    NULLIF(LTRIM(RTRIM([x_792_812])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([date_j])), '')),
+    NULLIF(LTRIM(RTRIM([x_822_902])), ''),
+    NULLIF(LTRIM(RTRIM([flag2])), ''),
+    TRY_CONVERT(DATE, NULLIF(LTRIM(RTRIM([close_date])), '')),
+    NULLIF(LTRIM(RTRIM([flag3])), '')
+FROM lanfam.stg_Adoption;
+DROP TABLE lanfam.stg_Adoption;
+GO
+
+/* ---------- Merged code lookup ---------- */
+IF OBJECT_ID('lanfam.Codes') IS NOT NULL DROP TABLE lanfam.Codes;
+CREATE TABLE lanfam.Codes (
+    CodesID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Codes PRIMARY KEY,
+    Source VARCHAR(10) NOT NULL,
+    category NVARCHAR(10) NULL,
+    code NVARCHAR(10) NULL,
+    description NVARCHAR(60) NULL
+);
+INSERT INTO lanfam.Codes (Source, category, code, description)
+SELECT 'CASE', category, code, description FROM lanfam.CodesCase
+UNION
+SELECT 'FAMILY', category, code, description FROM lanfam.CodesFamily;
+CREATE INDEX IX_Codes_Lookup ON lanfam.Codes (category, code) INCLUDE (description);
+GO
+
+/* ---------- Consolidated family key parent ---------- */
+IF OBJECT_ID('lanfam.FamilyIndex') IS NOT NULL DROP TABLE lanfam.FamilyIndex;
+CREATE TABLE lanfam.FamilyIndex (
+    famno NVARCHAR(20) NOT NULL CONSTRAINT PK_FamilyIndex PRIMARY KEY,
+    SourceTable VARCHAR(10) NOT NULL
+);
+INSERT INTO lanfam.FamilyIndex (famno, SourceTable)
+SELECT famno, MIN(t) FROM (
+    SELECT famno, 'FAMILY' AS t FROM lanfam.Family WHERE famno IS NOT NULL
+    UNION ALL
+    SELECT famno, 'FAM2' FROM lanfam.Fam2 WHERE famno IS NOT NULL
+) u GROUP BY famno;
+GO
+
+/* ---------- Natural keys on parents ---------- */
+CREATE UNIQUE INDEX UX_Child_caseno ON lanfam.Child (caseno)
+    WHERE caseno IS NOT NULL;
+CREATE UNIQUE INDEX UX_Worker_cd ON lanfam.Worker (worker_cd)
+    WHERE worker_cd IS NOT NULL;
+CREATE UNIQUE INDEX UX_Resource_resno ON lanfam.Resource (resno)
+    WHERE resno IS NOT NULL;
+GO
+
+/* ---------- Derived join column: ChildHistory -> Resource ---------- */
+ALTER TABLE lanfam.ChildHistory ADD ResnoFull AS
+    (LTRIM(RTRIM(ISNULL(res_type,''))) + LTRIM(RTRIM(ISNULL(resno,'')))) PERSISTED;
+CREATE INDEX IX_ChildHistory_ResnoFull ON lanfam.ChildHistory (ResnoFull);
+GO
+
+/* ---------- Relationships (NOCHECK: legacy orphans tolerated) ---------- */
+ALTER TABLE lanfam.ChildHistory WITH NOCHECK ADD CONSTRAINT
+    FK_ChildHistory_Child FOREIGN KEY (caseno) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.CostPurchase WITH NOCHECK ADD CONSTRAINT
+    FK_CostPurchase_Child FOREIGN KEY (caseno) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.CostEdit WITH NOCHECK ADD CONSTRAINT
+    FK_CostEdit_Child FOREIGN KEY (caseno2) REFERENCES lanfam.Child (caseno);
+ALTER TABLE lanfam.Child WITH NOCHECK ADD CONSTRAINT
+    FK_Child_AdmitWorker FOREIGN KEY (admit_wrk_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.Child WITH NOCHECK ADD CONSTRAINT
+    FK_Child_CurWorker FOREIGN KEY (cur_wrk_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.CostPurchase WITH NOCHECK ADD CONSTRAINT
+    FK_CostPurchase_Worker FOREIGN KEY (worker_cd) REFERENCES lanfam.Worker (worker_cd);
+ALTER TABLE lanfam.Referral WITH NOCHECK ADD CONSTRAINT
+    FK_Referral_Family FOREIGN KEY (famno) REFERENCES lanfam.FamilyIndex (famno);
+ALTER TABLE lanfam.FamilyHistory WITH NOCHECK ADD CONSTRAINT
+    FK_FamilyHistory_Family FOREIGN KEY (famno) REFERENCES lanfam.FamilyIndex (famno);
+GO
+
+/* ---------- Supporting indexes ---------- */
+CREATE INDEX IX_ChildHistory_caseno ON lanfam.ChildHistory (caseno);
+CREATE INDEX IX_CostPurchase_caseno ON lanfam.CostPurchase (caseno);
+CREATE INDEX IX_Referral_famno ON lanfam.Referral (famno);
+CREATE INDEX IX_Referral_date ON lanfam.Referral (ref_date);
+CREATE INDEX IX_NameIndex_surname ON lanfam.NameIndex (surname, given);
+CREATE INDEX IX_Child_surname ON lanfam.Child (surname, givename);
+GO
+
+/* ---------- Reporting view: history decoded ---------- */
+CREATE OR ALTER VIEW lanfam.vChildPlacementHistory AS
+SELECT  h.caseno, c.surname, c.givename, c.birthdate,
+        h.event_date, h.event_code, h.event_desc,
+        h.ResnoFull AS resno, r.surname1 AS res_surname,
+        r.category AS res_category, h.rate1, h.rate2,
+        h.to_date, h.svc_code, h.svc_desc, h.comment
+FROM lanfam.ChildHistory h
+LEFT JOIN lanfam.Child    c ON c.caseno = h.caseno
+LEFT JOIN lanfam.Resource r ON r.resno = h.ResnoFull;
+GO
+
+/* ---------- Load + integrity report ---------- */
+SELECT t.name AS TableName, SUM(p.rows) AS Rows
+FROM sys.tables t JOIN sys.partitions p
+  ON p.object_id = t.object_id AND p.index_id IN (0,1)
+WHERE SCHEMA_NAME(t.schema_id) = 'lanfam'
+GROUP BY t.name ORDER BY t.name;
+
+SELECT 'ChildHistory orphan caseno' AS Issue, COUNT(*) AS Rows
+FROM lanfam.ChildHistory h
+WHERE h.caseno IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM lanfam.Child c WHERE c.caseno = h.caseno)
+UNION ALL
+SELECT 'CostPurchase orphan caseno', COUNT(*)
+FROM lanfam.CostPurchase p
+WHERE p.caseno IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM lanfam.Child c WHERE c.caseno = p.caseno)
+UNION ALL
+SELECT 'Referral famno not in masters', COUNT(*)
+FROM lanfam.Referral r
+WHERE r.famno IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM lanfam.FamilyIndex f WHERE f.famno = r.famno)
+UNION ALL
+SELECT 'ChildHistory resno not in Resource', COUNT(*)
+FROM lanfam.ChildHistory h
+WHERE h.ResnoFull <> ''
+  AND NOT EXISTS (SELECT 1 FROM lanfam.Resource r WHERE r.resno = h.ResnoFull);
+GO
