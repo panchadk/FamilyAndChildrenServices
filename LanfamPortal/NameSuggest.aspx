@@ -38,6 +38,10 @@ protected void Page_Load(object sender, EventArgs e)
           {
               using (var cn = Db.Open()) WriteResourceSurnames(cn, sb, q);
           }
+          else if (mode == "refsurname")
+          {
+              using (var cn = Db.Open()) WriteReferralSurnames(cn, sb, q);
+          }
           else
           {
             // Two-part query ("Smith, J" or "Smith j"): the user is now
@@ -206,6 +210,35 @@ void WriteResourceSurnames(SqlConnection cn, StringBuilder sb, string q)
                 if (!first) sb.Append(","); first = false;
                 sb.Append("{\"label\":\"").Append(JsEsc(sur)).Append(" (")
                   .Append(cnt).Append(cnt == 1 ? " home)" : " homes)")
+                  .Append("\",\"value\":\"").Append(JsEsc(sur)).Append("\"}");
+            }
+    }
+}
+
+/// <summary>Surname suggestions scoped ONLY to lanfam.Referral --
+/// Referrals.aspx searches that table exclusively, so the count shown
+/// in a suggestion must match what pressing Search will actually
+/// find. The general person population (NameIndex/CrossRef) includes
+/// many people who were never the subject of an actual referral --
+/// suggesting them here with a misleading count sent searches to
+/// zero results.</summary>
+void WriteReferralSurnames(SqlConnection cn, StringBuilder sb, string q)
+{
+    using (var cmd = new SqlCommand(
+        "SELECT TOP 15 surname, COUNT(*) AS cnt FROM lanfam.Referral " +
+        "WHERE surname LIKE @q GROUP BY surname ORDER BY COUNT(*) DESC, surname", cn))
+    {
+        cmd.Parameters.AddWithValue("@q", q + "%");
+        bool first = true;
+        using (var r = cmd.ExecuteReader())
+            while (r.Read())
+            {
+                string sur = r.IsDBNull(0) ? "" : r.GetString(0);
+                int cnt = r.IsDBNull(1) ? 0 : Convert.ToInt32(r[1]);
+                if (sur == "") continue;
+                if (!first) sb.Append(","); first = false;
+                sb.Append("{\"label\":\"").Append(JsEsc(sur)).Append(" (")
+                  .Append(cnt).Append(cnt == 1 ? " referral)" : " referrals)")
                   .Append("\",\"value\":\"").Append(JsEsc(sur)).Append("\"}");
             }
     }

@@ -198,7 +198,7 @@ string Highlight(string narrative, string term)
     // Single surname field on this page (referrals search by surname
     // only) -- picking a suggestion fills the box and searches right away.
     attachAutocomplete(nameBox, nameList,
-      function (q) { return 'NameSuggest.aspx?mode=surname&q=' + encodeURIComponent(q); },
+      function (q) { return 'NameSuggest.aspx?mode=refsurname&q=' + encodeURIComponent(q); },
       function (it) { nameBox.value = it.value; nameBox.form.submit(); });
   })();
   </script>
