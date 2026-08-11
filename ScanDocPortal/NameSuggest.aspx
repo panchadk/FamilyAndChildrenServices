@@ -1,0 +1,1 @@
+<%@ Page Language="C#" AutoEventWireup="true" CodeFile="NameSuggest.aspx.cs" Inherits="ScanDoc_NameSuggest" %>
