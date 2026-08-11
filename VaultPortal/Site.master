@@ -1,0 +1,42 @@
+<%@ Master Language="C#" AutoEventWireup="true" CodeFile="Site.master.cs" Inherits="VaultPortal.SiteMaster" %>
+<!DOCTYPE html>
+<html lang="en">
+<head runat="server">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vault Register</title>
+    <link href="Styles.css" rel="stylesheet" />
+    <asp:ContentPlaceHolder ID="Head" runat="server" />
+</head>
+<body>
+<form id="form1" runat="server">
+
+    <div class="topbar">
+        <div class="top-left">
+            <span class="top-mark">FCSGW</span>
+            <span class="top-title">Vault Register</span>
+        </div>
+        <div class="top-right">
+            <span class="role-badge <%= IsEditor ? "role-edit" : "role-read" %>">
+                <%= IsEditor ? "EDIT ACCESS" : "READ-ONLY" %></span>
+            <span class="user-banner"><%= Context.User.Identity.Name %></span>
+        </div>
+    </div>
+
+    <div class="nav">
+        <a href="Default.aspx">Search the register</a>
+        <a href="Default.aspx?view=out">Signed out now</a>
+        <a href="Default.aspx?view=media">Media holdings</a>
+    </div>
+
+    <asp:ContentPlaceHolder ID="Body" runat="server" />
+
+    <div class="footer">
+        Family &amp; Children&rsquo;s Services of Guelph and Wellington County
+        &middot; Physical records vault register &middot;
+        Every search, view, and change is logged.
+    </div>
+
+</form>
+</body>
+</html>
