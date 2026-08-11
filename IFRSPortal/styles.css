@@ -1,0 +1,115 @@
+:root {
+  --ink:#2a2620; --ink2:#5b564c; --muted:#8a8578;
+  --cream:#f7f3ec; --card:#fffdf9; --line:#ddd6c8;
+  --accent:#23456e; --accent2:#2e5a8f; --gold:#9a7b2d;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--cream); color:var(--ink);
+  font:14px/1.5 "Segoe UI",Arial,sans-serif; }
+.serif { font-family:Georgia,"Times New Roman",serif; }
+
+/* Utility strip */
+.utilbar { background:#17273f; color:#8fa3c2; font-size:11px; }
+.utilbar .inner { max-width:1240px; margin:0 auto; padding:5px 22px;
+  display:flex; }
+.utilbar .right { margin-left:auto; }
+
+/* Top bar */
+.topbar { background:var(--accent); color:#fff;
+  border-bottom:3px solid var(--gold); }
+.topbar .inner { max-width:1240px; margin:0 auto; padding:14px 22px;
+  display:flex; align-items:center; gap:34px; flex-wrap:wrap; }
+.topbar .brand { color:#fff; font-family:Georgia,"Times New Roman",serif;
+  font-size:23px; letter-spacing:.5px; text-decoration:none; white-space:nowrap; }
+.topbar nav { display:flex; gap:22px; flex-wrap:wrap; }
+.topbar nav a { color:#c9d6e8; text-decoration:none;
+  font-size:12px; letter-spacing:1.2px; text-transform:uppercase;
+  padding:4px 0; border-bottom:2px solid transparent; }
+.topbar nav a:hover { color:#fff; border-bottom-color:var(--gold); }
+
+main { max-width:1240px; margin:0 auto; padding:0 22px; }
+footer { max-width:1240px; margin:36px auto 26px; padding:12px 22px;
+  font-size:11.5px; color:var(--muted); border-top:1px solid var(--line); }
+
+/* Masthead (home) */
+.masthead { text-align:center; padding:34px 0 10px; }
+.masthead .kicker { font-size:11px; letter-spacing:3px; color:var(--gold);
+  text-transform:uppercase; }
+.masthead h1 { font-family:Georgia,serif; font-weight:normal; font-size:38px;
+  margin:8px 0 10px; color:var(--ink); }
+.masthead .rule { width:64px; height:3px; background:var(--accent); margin:0 auto 14px; }
+.masthead .lede { max-width:640px; margin:0 auto; color:var(--ink2); font-size:14.5px; }
+
+/* Stat cards */
+.stats { display:flex; gap:14px; justify-content:center; margin:26px 0 8px; flex-wrap:wrap; }
+.stat { background:var(--card); border:1px solid var(--line); border-top:3px solid var(--accent);
+  padding:14px 22px; min-width:150px; text-align:left; text-decoration:none; display:block; }
+a.stat:hover { border-color:var(--accent); background:#fff; }
+.stat .n { font-family:Georgia,serif; font-size:26px; color:var(--accent); }
+.stat .l { font-size:10.5px; letter-spacing:1.6px; color:var(--muted); text-transform:uppercase; margin-top:2px; }
+
+/* Search band */
+.searchband { border-top:2px solid var(--accent); margin-top:18px; padding-top:16px; }
+.searchbox { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+.searchbox label { display:block; font-size:10.5px; letter-spacing:1px;
+  color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+.searchbox input[type=text], .searchbox select {
+  padding:9px 10px; border:1px solid var(--line); background:#fff;
+  font-size:14px; width:190px; }
+.searchbox select { width:150px; }
+.btn { background:#1c1a16; color:#fff; border:0; padding:11px 26px;
+  font-size:12.5px; letter-spacing:1.5px; text-transform:uppercase; cursor:pointer; }
+.btn:hover { background:var(--accent); }
+.hint { font-size:12px; color:var(--ink2); margin:10px 0 4px; }
+.hint a { color:var(--accent); }
+
+/* A-Z */
+.az { display:flex; gap:5px; flex-wrap:wrap; margin:10px 0; }
+.az a { display:inline-block; border:1px solid var(--line); background:#fff;
+  color:var(--accent); padding:4px 9px; font-size:12px; text-decoration:none; }
+.az a:hover, .az a.on { background:var(--accent); color:#fff; }
+
+/* Tables */
+table.grid { width:100%; border-collapse:collapse; background:var(--card);
+  border:1px solid var(--line); margin-top:14px; }
+table.grid th { background:#efe9dd; color:var(--ink); text-align:left;
+  font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase;
+  padding:9px 12px; border-bottom:1px solid var(--line); cursor:default; }
+table.grid td { padding:8px 12px; border-bottom:1px solid #efeade; font-size:13.5px; }
+table.grid tr:hover td { background:#f4f1e9; }
+a { color:var(--accent2); }
+
+/* Case page */
+.casehead { background:var(--card); border:1px solid var(--line);
+  border-top:3px solid var(--accent); padding:16px 20px; margin-top:22px;
+  display:flex; align-items:center; }
+.casehead h1 { font-family:Georgia,serif; font-weight:normal; font-size:26px; margin:0; }
+.casehead .meta { font-size:12px; color:var(--muted); margin-top:5px; }
+.casehead .actions { margin-left:auto; }
+details.cat { background:var(--card); border:1px solid var(--line); margin:12px 0; }
+details.cat summary { cursor:pointer; padding:10px 16px; font-size:13px;
+  letter-spacing:.8px; text-transform:uppercase; color:var(--accent);
+  background:#efe9dd; }
+details.cat[open] summary { border-bottom:1px solid var(--line); }
+.docrow { display:flex; gap:14px; padding:8px 16px; border-bottom:1px solid #f0ebe0; font-size:13.5px; }
+.docrow:last-child { border-bottom:0; }
+.docrow .f { flex:0 0 360px; }
+.docrow .s { color:var(--ink2); }
+.pill { display:inline-block; background:#fff; border:1px solid var(--line);
+  color:var(--ink2); font-size:11px; border-radius:10px; padding:0 9px; margin-left:8px; }
+
+/* Doc detail */
+h1.doc { font-family:Georgia,serif; font-weight:normal; font-size:26px; margin:0; }
+.fieldtbl { width:100%; border-collapse:collapse; background:var(--card);
+  border:1px solid var(--line); margin-top:12px; }
+.fieldtbl td { padding:6px 12px; border-bottom:1px solid #f0ebe0; font-size:13.5px; vertical-align:top; }
+.fieldtbl td.k { width:270px; color:var(--muted); }
+.narrhead { font-family:Georgia,serif; color:var(--accent); font-size:17px; margin:18px 0 6px; }
+.narr { background:var(--card); border:1px solid var(--line); padding:14px 18px;
+  white-space:pre-wrap; font-size:14px; }
+.prov { font-size:11.5px; color:var(--muted); margin-top:18px; }
+
+.sub { color:var(--ink2); font-size:12.5px; margin-bottom:14px; }
+h1 { font-family:Georgia,serif; font-weight:normal; color:var(--ink); }
+@media print { .topbar, footer, .noprint { display:none !important; }
+  body { background:#fff; } main { max-width:none; } }

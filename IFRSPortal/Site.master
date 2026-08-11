@@ -1,0 +1,38 @@
+<%@ Master Language="C#" %>
+<!DOCTYPE html>
+<html>
+<head runat="server">
+  <meta charset="utf-8"/>
+  <title>IFRS Archive</title>
+  <link rel="stylesheet" href="styles.css?v=3"/>
+</head>
+<body>
+  <div class="utilbar">
+    <div class="inner">
+      <span>Family &amp; Children&rsquo;s Services of Guelph-Wellington &middot; Legacy Records</span>
+      <span class="right"><%= Portal.H(Context.User.Identity.Name) %> &middot; every search and view is logged</span>
+    </div>
+  </div>
+  <header class="topbar">
+    <div class="inner">
+      <a class="brand" href="Default.aspx">The IFRS Archive</a>
+      <nav>
+        <a href="Default.aspx">Case Search</a>
+        <a href="Browse.aspx">Browse A&ndash;Z</a>
+        <a href="Person.aspx">People</a>
+        <a href="Records.aspx?k=casenote">Case Notes</a>
+        <a href="Records.aspx?k=referral">Referrals</a>
+        <a href="Records.aspx?k=all">All Documents</a>
+        <%= Portal.IsAdmin(Context.User) ? "<a href='Audit.aspx'>Audit Log</a>" : "" %>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <form id="frm" runat="server">
+      <asp:ContentPlaceHolder ID="Main" runat="server"/>
+    </form>
+  </main>
+  <footer>The IFRS Archive &middot; ifr / IFRS2000 case records &middot; read-only archive &middot; digitized 2026</footer>
+  <script src="app.js?v=3"></script>
+</body>
+</html>
